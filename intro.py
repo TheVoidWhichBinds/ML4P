@@ -152,19 +152,25 @@ def linear_regression():
     print(f'Prediction after training: f({x_test.item()}) = {model(x_test).item():.3f}')
 
 def NN():
+    # Overview: All training data (or a subset = 'batch') is made into the design
+    # matrix X = batch_size x 784 (28x28 screen pixels are flattened into one
+    # dimension), then multiplied by 784 x L weight matrix (L is up to me =
+    # next layer width / # neurons in layer), and added by bias (batch size x L)
+
+
     # Hyperparameters:
-    input_size = 784 # 28x28
-    hidden_size = 500
-    num_classes = 10
-    num_epochs = 2
-    batch_size = 100
-    learning_rate = 0.001
+    input_size = 784 # features (e.g. # pixels per image)
+    hidden_size = 500 # number of neurons in (1) hidden layer
+    num_classes = 10 # number of label categories
+    num_epochs = 2 # number of runs through the network
+    batch_size = 100 # only this many training data run through network at once
+    learning_rate = 0.001 # magnitude of step factor of Loss gradient
 
     # MNIST dataset
     train_dataset = torchvision.datasets.MNIST(
         root='./data',
         train=True,
-        transform = transforms.ToTensor(),
+        transform = transforms.ToTensor(), # could be in different form initially
         download=True,
     )
 
@@ -174,6 +180,7 @@ def NN():
         transform = transforms.ToTensor(),
     )
 
+    # DataLoader gives way to iterate over dataset:
     train_loader = torch.utils.data.DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
@@ -187,5 +194,63 @@ def NN():
     )
 
 
+    # Fully connected (EVERY input neuron connected to EVERY output neuron)
+    # Neural Network construction:
+    class NeuralNet(nn.Module):
+        # When calling an instance (see model = NeuralNet below), __init__ auto-called
+        def __init__(self, input_size, hidden_size, num_classes): 
+            super(NeuralNet, self).__init__() # calls nn.Module __init__ func
+            # First layer- in: feature #/width, out: hidden layer width
+            self.ll = nn.Linear(input_size, hidden_size) 
+            self.relu = nn.ReLU() # activation func sigma
+            # Prediction- in: hidden layer width, out: number of label categories
+            self.l2 = nn.Linear(hidden_size, num_classes)
+
+        # Running forward pass:
+        def forward(self, x): 
+            out = self.ll(x)
+            out = self.relu(out)
+            out = self.l2(out)
+            # No activation or softmax at the end (for specific loss func input below)
+            return out
+        
+    # Instance:
+    model = NeuralNet(input_size, hidden_size, num_classes)
+
+    # Loss and Optimizer:
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Training model:
+    n_total_steps = len(train_loader)
+    for epoch in range(num_epochs):
+        for i, (images, labels) in enumerate(train_loader):
+            images = images.reshape(-1,28*28) # flattening pixels into 1 dimension
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward() # dL/dw
+            optimizer.step() # w -= learning_rate * dL/dw
+            optimizer.zero_grad() # refresh gradient tracking
+
+            if (i+1) % 100 == 0:
+                print(f'Epoch [{epoch+1}/{num_epochs}], Step {i+1}/{n_total_steps}], Loss: {loss}')
+
+    
+    # Test model:
+    with torch.no_grad(): # gradient tracking not needed for test
+        n_correct = 0 # initializing number of correct test data prediction vs target
+        n_samples = len(test_loader.dataset)
+
+        for images, labels in test_loader:
+            images = images.reshape(-1, 28*28)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1) # max returns (output_value, index)
+            n_correct += (predicted == labels).sum().item() # checking predicted output index matches label index
+            
+        acc = n_correct / n_samples # accuracy ratio
+        print(f'Accuracy of the network on the {n_samples} test images: {100*acc}%')
 
 
+
+
+NN()
