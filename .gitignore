@@ -1,0 +1,10 @@
+data/
+*.npy
+*.npz
+*.fits
+*.fit
+*.h5
+*.hdf5
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
