@@ -1,10 +1,10 @@
 import numpy as np
-from astropy.io import fits # You might need to pip install this
-import pylab # only needed for verification
+from astropy.io import fits 
 from matplotlib import pyplot as plt
 import torch
-import torchvision
-
+from torch.utils.data import TensorDataset, DataLoader
+import torch.nn as nn
+from sklearn.neighbors import KNeighborsRegressor
 
 
 
@@ -14,7 +14,6 @@ import torchvision
 path_labels = "./data/labels.fits"
 allstar = fits.open(path_labels) # loads star database data
 labels = allstar[1].data # labels
-
 
 # 'ANDs' RGB (True) with check of label params compared to threshold values (True/False)
 # True + True = True, True + False = False
@@ -43,52 +42,85 @@ train_labels = RGB_labels[I_train]
 valid_labels = RGB_labels[I_valid]
 test_labels = RGB_labels[I_test]
 
-
 # Downloading features: 
 train_features = np.load('./data/train_features.npy')
 valid_features = np.load('./data/valid_features.npy')
 test_features = np.load('./data/test_features.npy')
 
-print(type(train_features))
 
 
-#------------------------------------------ LINEAR REGRESSION -----------------------------------------
+
+#------------------------------------------ LINEAR REGRESSION ------------------------------------------
 def linear_regression():
+    class LinearRegression(nn.Module):
+        #
+        def __init__(self, input_dim, output_dim):
+            super().__init__()
+            self.lin = nn.Linear(input_dim, output_dim)
+        #
+        def forward(self, X):
+            return self.lin(X)
+
+
+    # Data prep:
+    X = torch.tensor(train_features, dtype=torch.float32) # (N, d)
+    y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
+    y = torch.from_numpy(y_np).view(-1, 1)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=128, shuffle=True)
+
+
+    model = LinearRegression(input_dim=X.shape[1], output_dim=1)
+    loss_fn = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr= 1e-3)
+    loss_prev = None
+
+
+    # Running the training loop:
+    for epoch in range(100): 
+        loss_total = 0.0 # initializing sum of squares loss over all data
+        N = 0 # initializing sum of number of data 
+        for xb, yb in loader: # loop over batches
+            optimizer.zero_grad() # refreshing gradient-tracker
+            f = model(xb) # forward pass
+            loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
+            loss_batch.backward() # backward pass
+            optimizer.step() # updating weights and biases
+
+            loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+            N += xb.size(0) # sum over number of samples in each batch
+
+
+        loss_epoch = loss_total / N  # epoch mean loss 
+
+        if (epoch + 1) % 5 == 0: # printing epoch loss
+            print(f"epoch {epoch+1}: loss={loss_epoch:.6g}")
+
+        # Checking Delta of epoch loss to terminate loop if threshold met:
+        if loss_prev is not None:
+            loss_delta = abs(loss_epoch - loss_prev)
+            if loss_delta <= 1e-4:
+                W = model.lin.weight
+                b = model.lin.bias
+                print(f"STOP epoch {epoch+1}: loss={loss_epoch:.6g}, Δloss={loss_delta:.3g}, ||W||={W.norm().item():.3g}, b={b.item():.3g}")
+                break
+
+        loss_prev = loss_epoch 
+
+
+
+
+#---------------------------------------- K NEAREST NEIGHBORS ------------------------------------------
+def KNN(k):
     
-    x = torch.tensor(train_features, dtype=torch.float32) # features (rank 1)
-    y = torch.tensor(train_labels['LOGG'], dtype=torch.float32) # (num_spectra, 1) single-output regression 
-    w = torch.tensor(0.5 * np.ones(len(x)), dtype=torch.float32, requires_grad=True) # weights (rank 1)
-    b = torch.tensor(0.0, dtype=torch.float32, requires_grad=True) # biase (rank 0)
+    # Data prep:
+    X_train = train_features
+    y_train = train_labels
+
+    knn = KNeighborsRegressor(k)
+    knn.fit(X_train, y_train) 
+    f_train = knn.predict(X_train) # 
+    print(loss = y_train - f_train)
 
 
-    def forward_pass(x): # linear regression function model
-        f = w * x + b
-        return f
-    
-    def loss(y, f): # mean-squared-error loss function
-        l = ((y - f)**2).mean()
-        return l
-
-
-    learning_rate = 0.01 # gradient descent step-size factor
-    n_epochs = 100 # number of training runs through depth of network
-
-    for epoch in range(n_epochs): 
-        f = forward_pass(x) # predict = forward propagation
-        l = loss(y, f) # loss 
-        l.backward() # gradients calculated using backward propagation
-        with torch.no_grad(): # .nograd() to stop weight-tracking at end of epoch
-            w -= learning_rate * w.grad # alpha * dL/dw
-        w.grad.zero_() # refreshing weight tracking
-        
-    
-
-
-# Linear regression takes the form f = w * X + b:
-
-
-
-
-
-
-
+KNN(4)
