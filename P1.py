@@ -9,7 +9,7 @@ from sklearn.neighbors import KNeighborsRegressor
 
 
 
-#---------------------------------- DOWNLOADS & SETUP -----------------------------------
+#------------------------------------------ DOWNLOADS & SETUP ------------------------------------------ 
 # Downloading labels:
 path_labels = "./data/labels.fits"
 allstar = fits.open(path_labels) # loads star database data
@@ -50,8 +50,14 @@ test_features = np.load('./data/test_features.npy')
 
 
 
+
+
+
+
 #------------------------------------------ LINEAR REGRESSION ------------------------------------------
-def linear_regression():
+def linear_regression(epochs, batch_size, delta_threshold):
+
+    #-------------------------------------------------------------------------------
     class LinearRegression(nn.Module):
         #
         def __init__(self, input_dim, output_dim):
@@ -61,51 +67,85 @@ def linear_regression():
         def forward(self, X):
             return self.lin(X)
 
-
     # Data prep:
-    X = torch.tensor(train_features, dtype=torch.float32) # (N, d)
+    X_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
-    y = torch.from_numpy(y_np).view(-1, 1)
-    dataset = TensorDataset(X, y)
-    loader = DataLoader(dataset, batch_size=128, shuffle=True)
+    y_train = torch.from_numpy(y_np).view(-1, 1)
+    dataset = TensorDataset(X_train, y_train)
+    #
+    X_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
+    y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
+    y_valid = torch.from_numpy(y_np).view(-1, 1)
+    #
+    X_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
+    y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
+    y_test = torch.from_numpy(y_np).view(-1, 1)
 
-
-    model = LinearRegression(input_dim=X.shape[1], output_dim=1)
+    # Regression Prep:
+    model = LinearRegression(input_dim=X_train.shape[1], output_dim=1)
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr= 1e-3)
-    loss_prev = None
+    #--------------------------------------------------------------------------------
 
 
-    # Running the training loop:
-    for epoch in range(100): 
-        loss_total = 0.0 # initializing sum of squares loss over all data
-        N = 0 # initializing sum of number of data 
-        for xb, yb in loader: # loop over batches
-            optimizer.zero_grad() # refreshing gradient-tracker
-            f = model(xb) # forward pass
-            loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
-            loss_batch.backward() # backward pass
-            optimizer.step() # updating weights and biases
 
-            loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
-            N += xb.size(0) # sum over number of samples in each batch
+    #------------------------------------------------------------------------------
+    # Train:
+    def train(epochs, batch_size, delta_threshold):
+
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)  # dividing train data into batches:
+        loss_prev = None
+
+        for epoch in range(epochs): 
+            loss_total = 0.0 # initializing sum of squares loss over all data
+            N = 0 # initializing sum of number of data 
+            for xb, yb in loader: # loop over batches
+                optimizer.zero_grad() # refreshing gradient-tracker
+                f = model(xb) # forward pass
+                loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
+                loss_batch.backward() # backward pass
+                optimizer.step() # updating weights and biases
+                #
+                loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+                N += xb.size(0) # sum over number of samples in each batch
+
+            loss_epoch = loss_total / N  # epoch mean loss 
+
+            # Checking delta of epoch loss to terminate loop if threshold met:
+            if loss_prev is not None:
+                loss_delta = abs(loss_epoch - loss_prev)
+                if loss_delta <= delta_threshold:
+                    W = model.lin.weight
+                    b = model.lin.bias
+                    #print(f"STOP epoch {epoch+1}: loss={loss_epoch:.6g}, Δloss={loss_delta:.3g}, ||W||={W.norm().item():.3g}, b={b.item():.3g}")
+                    break
+
+            loss_prev = loss_epoch 
+        
+        return W, b
 
 
-        loss_epoch = loss_total / N  # epoch mean loss 
+    # Validate:
+    def validate(epochs, batch_size, delta_threshold):
+        #
+        W, b = train(epochs, batch_size, delta_threshold)
+        f_valid = W * X_valid + b # linear regression with trained weights & biases
+        loss_valid = ((y_valid - f_valid)**2).mean() # MSE
+        #
+        return loss_valid
 
-        if (epoch + 1) % 5 == 0: # printing epoch loss
-            print(f"epoch {epoch+1}: loss={loss_epoch:.6g}")
 
-        # Checking Delta of epoch loss to terminate loop if threshold met:
-        if loss_prev is not None:
-            loss_delta = abs(loss_epoch - loss_prev)
-            if loss_delta <= 1e-4:
-                W = model.lin.weight
-                b = model.lin.bias
-                print(f"STOP epoch {epoch+1}: loss={loss_epoch:.6g}, Δloss={loss_delta:.3g}, ||W||={W.norm().item():.3g}, b={b.item():.3g}")
-                break
+    # Validation loss returned:
+    return validate(epochs, batch_size, delta_threshold)
+    #------------------------------------------------------------------------------
 
-        loss_prev = loss_epoch 
+
+# Running linear regression with validation loss return:
+# print(linear_regression(100, 128, 1e-3)) 
+    
+
+
+
 
 
 
@@ -113,14 +153,40 @@ def linear_regression():
 #---------------------------------------- K NEAREST NEIGHBORS ------------------------------------------
 def KNN(k):
     
+    #---------------------------------------------------------
     # Data prep:
-    X_train = train_features
-    y_train = train_labels
-
-    knn = KNeighborsRegressor(k)
-    knn.fit(X_train, y_train) 
-    f_train = knn.predict(X_train) # 
-    print(loss = y_train - f_train)
+    X_train = train_features.astype(np.float32)
+    y_train = np.array(train_labels["LOGG"], dtype=np.float32)
+    #---------------------------------------------------------
 
 
-KNN(4)
+
+    #-------------------------------------------------------------------------------
+    # Train:
+    def train(k):
+
+        knn = KNeighborsRegressor(n_neighbors=k)
+        knn.fit(X_train, y_train) 
+        f_train = knn.predict(X_train) # model predictions for y_train of every star
+        
+        loss_train = ((y_train - f_train)**2).mean() # MSE
+        # print(f'loss: {float(loss_train):.6f}')
+
+    
+
+    # Validate:
+
+
+    
+
+
+    
+
+    
+
+
+
+
+#--------------------------------------- MULTI-LAYER PERCEPTRON ---------------------------------------
+def MLP():
+    xxx = 4
