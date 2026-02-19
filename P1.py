@@ -60,7 +60,7 @@ test_features = np.load('./data/test_features.npy')
 
 
 #------------------------------------------ LINEAR REGRESSION ------------------------------------------
-def linear_regression(epochs, batch_size, delta_threshold):
+def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
     
     #-------------------------------------------------------------------------------
     class LinearRegression(nn.Module):
@@ -89,14 +89,14 @@ def linear_regression(epochs, batch_size, delta_threshold):
     # Regression Prep:
     model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr= 1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr= learning_rate)
     #--------------------------------------------------------------------------------
 
 
 
     #------------------------------------------------------------------------------
     # Train:
-    def train(epochs, batch_size, delta_threshold):
+    def train():
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)  # dividing train data into batches:
         loss_prev = None
@@ -131,9 +131,9 @@ def linear_regression(epochs, batch_size, delta_threshold):
 
 
     # Validate:
-    def validate(epochs, batch_size, delta_threshold):
+    def validate():
         #
-        W, b = train(epochs, batch_size, delta_threshold)
+        W, b = train()
         f_valid = W * x_valid + b # linear regression with trained weights & biases
         loss_valid = ((y_valid - f_valid)**2).mean() # MSE
         #
@@ -141,12 +141,12 @@ def linear_regression(epochs, batch_size, delta_threshold):
 
 
     # Validation loss returned:
-    return validate(epochs, batch_size, delta_threshold)
+    return validate()
     #------------------------------------------------------------------------------
 
 
 # Running linear regression with validation loss return:
-# print(linear_regression(100, 128, 1e-3)) 
+#print(f'linear regression validation loss: {linear_regression(100, 128, 1e-3, 1e-3).item():.5g}') 
     
 
 
@@ -197,9 +197,9 @@ def KNN(k_range):
         knn = KNeighborsRegressor(n_neighbors=k_opt)
         knn.fit(x_valid, y_valid)
         f_valid = knn.predict(x_valid) 
-        loss_valid = ((y_train - f_valid)**2).mean() 
+        loss_valid = ((y_valid - f_valid)**2).mean() 
 
-        return loss_valid
+        return k_opt, loss_valid
 
 
     # Test:
@@ -217,8 +217,9 @@ def KNN(k_range):
     #-----------------------------------------------------------------------------------------------
     
 
-# Running K Nearest Neighbors with validation loss return:
-print(KNN([1,2,3,4,5,6,7,8,9,10])) 
+# Running K-Nearest-Neighbors with validation loss return:
+# knn_results = KNN(np.arange(2,10,1)) # storing k_opt (from training) and validation loss
+# print(f"optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}")
     
 
     
@@ -230,4 +231,4 @@ print(KNN([1,2,3,4,5,6,7,8,9,10]))
 
 #--------------------------------------- MULTI-LAYER PERCEPTRON ---------------------------------------
 def MLP():
-    xxx = 4
+    xxx = 3
