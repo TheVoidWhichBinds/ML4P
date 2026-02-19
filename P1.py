@@ -1,3 +1,8 @@
+# NOTES:
+# Consider Layer Normalization, Weight Normalization, Normalization Propagation
+
+
+
 import numpy as np
 from astropy.io import fits 
 from matplotlib import pyplot as plt
@@ -56,7 +61,7 @@ test_features = np.load('./data/test_features.npy')
 
 #------------------------------------------ LINEAR REGRESSION ------------------------------------------
 def linear_regression(epochs, batch_size, delta_threshold):
-
+    
     #-------------------------------------------------------------------------------
     class LinearRegression(nn.Module):
         #
@@ -64,25 +69,25 @@ def linear_regression(epochs, batch_size, delta_threshold):
             super().__init__()
             self.lin = nn.Linear(input_dim, output_dim)
         #
-        def forward(self, X):
-            return self.lin(X)
+        def forward(self, x):
+            return self.lin(x)
 
     # Data prep:
-    X_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
+    x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
-    dataset = TensorDataset(X_train, y_train)
+    dataset = TensorDataset(x_train, y_train)
     #
-    X_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
+    x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
     #
-    X_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
+    x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
 
     # Regression Prep:
-    model = LinearRegression(input_dim=X_train.shape[1], output_dim=1)
+    model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr= 1e-3)
     #--------------------------------------------------------------------------------
@@ -129,7 +134,7 @@ def linear_regression(epochs, batch_size, delta_threshold):
     def validate(epochs, batch_size, delta_threshold):
         #
         W, b = train(epochs, batch_size, delta_threshold)
-        f_valid = W * X_valid + b # linear regression with trained weights & biases
+        f_valid = W * x_valid + b # linear regression with trained weights & biases
         loss_valid = ((y_valid - f_valid)**2).mean() # MSE
         #
         return loss_valid
@@ -151,34 +156,70 @@ def linear_regression(epochs, batch_size, delta_threshold):
 
 
 #---------------------------------------- K NEAREST NEIGHBORS ------------------------------------------
-def KNN(k):
+def KNN(k_range):
     
     #---------------------------------------------------------
     # Data prep:
-    X_train = train_features.astype(np.float32)
+    x_train = train_features.astype(np.float32)
     y_train = np.array(train_labels["LOGG"], dtype=np.float32)
+    #
+    x_valid = valid_features.astype(np.float32)
+    y_valid = np.array(valid_labels["LOGG"], dtype=np.float32)
+    #
+    x_test = test_features.astype(np.float32)
+    y_test = np.array(test_labels["LOGG"], dtype=np.float32)
     #---------------------------------------------------------
 
 
-
-    #-------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------------------------
     # Train:
-    def train(k):
+    def train(k_range: list[int]):
 
-        knn = KNeighborsRegressor(n_neighbors=k)
-        knn.fit(X_train, y_train) 
-        f_train = knn.predict(X_train) # model predictions for y_train of every star
-        
-        loss_train = ((y_train - f_train)**2).mean() # MSE
-        # print(f'loss: {float(loss_train):.6f}')
+        loss_train = np.empty(len(k_range), dtype=np.float32) # initializing training loss for each k
 
+        for i, k in enumerate(k_range):
+            # Running KNN:
+            knn = KNeighborsRegressor(n_neighbors=k)
+            knn.fit(x_train, y_train) 
+            f_train = knn.predict(x_train) 
+            loss_train[i] = ((y_train - f_train)**2).mean() # MSE loss
+
+            i_min = int(np.argmin(loss_train))  # index of minimum loss over k_range
+            k_opt = k_range[i_min] # best training k
+
+        return k_opt
     
 
     # Validate:
+    def validate(k_range: list[int]):
+        # Running KNN:
+        k_opt = train(k_range) # extracting the optimal k from the training runs
+        knn = KNeighborsRegressor(n_neighbors=k_opt)
+        knn.fit(x_valid, y_valid)
+        f_valid = knn.predict(x_valid) 
+        loss_valid = ((y_train - f_valid)**2).mean() 
+
+        return loss_valid
 
 
+    # Test:
+    # def test(k_range: list[int]):
+    #      # Running KNN:
+    #     k_opt = train(k_range) # extracting the optimal k from the training runs
+    #     knn = KNeighborsRegressor(n_neighbors=k_opt)
+    #     knn.fit(x_test, y_test)
+    #     f_test = knn.predict(x_test) 
+    #     loss_test = ((y_train - f_test)**2).mean() 
+        
+    #     return print(f'Test MSE loss:{loss_test}')
+
+    return validate(k_range)
+    #-----------------------------------------------------------------------------------------------
     
 
+# Running K Nearest Neighbors with validation loss return:
+print(KNN([1,2,3,4,5,6,7,8,9,10])) 
+    
 
     
 
