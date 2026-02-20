@@ -10,7 +10,10 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from sklearn.neighbors import KNeighborsRegressor
-
+# TensorFlow/Keras imports removed because this script uses PyTorch for models.
+# If you need Keras functionality, install TensorFlow and uncomment the lines below.
+# from tensorflow.keras.models import Sequential
+# from tensorflow.keras.layers import Flatten, Dense
 
 
 
@@ -275,21 +278,6 @@ def MLP(epochs, batch_size, delta_threshold, learning_rate):
 
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)  # dividing train data into batches:
         loss_prev = None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
         for epoch in range(epochs): 
