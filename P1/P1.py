@@ -17,7 +17,7 @@ from sklearn.neighbors import KNeighborsRegressor
 
 
 
-#------------------------------------------ DOWNLOADS & SETUP ------------------------------------------ 
+#------------------- DOWNLOADS & SETUP ------------------------------------------ 
 # Downloading labels:
 path_labels = "./data/labels.fits"
 allstar = fits.open(path_labels) # loads star database data
@@ -62,7 +62,7 @@ test_features = np.load('./data/test_features.npy')
 
 
 
-#------------------------------------------ LINEAR REGRESSION ------------------------------------------
+#------------------- LINEAR REGRESSION ------------------------------------------
 def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
     
     #-------------------------------------------------
@@ -85,11 +85,11 @@ def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
     dataset = TensorDataset(x_train, y_train)
-    #
+    
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
-    #
+    
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
@@ -173,8 +173,8 @@ def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
 
 
 
-#---------------------------------------- K NEAREST NEIGHBORS ------------------------------------------
-def KNN(k_range):
+#------------------- K NEAREST NEIGHBORS ------------------------------------------
+def KNN(k_range: list[int]):
     
     #---------------------------------------------------------
     # Data prep:
@@ -191,8 +191,8 @@ def KNN(k_range):
 
     #------------------------------------------------------------------------------------------------
     # Train:
-    def train(k_range: list[int]):
-
+    def train():
+        #
         loss_train = np.empty(len(k_range), dtype=np.float32) # initializing training loss for each k
 
         for i, k in enumerate(k_range):
@@ -201,7 +201,7 @@ def KNN(k_range):
             knn.fit(x_train, y_train) 
             f_train = knn.predict(x_train) 
             loss_train[i] = ((y_train - f_train)**2).mean() # MSE loss
-
+            #
             i_min = int(np.argmin(loss_train))  # index of minimum loss over k_range
             k_opt = k_range[i_min] # best training k
 
@@ -209,7 +209,7 @@ def KNN(k_range):
     
 
     # Validate:
-    def validate(k_range: list[int]):
+    def validate():
         # Running KNN:
         k_opt = train(k_range) # extracting the optimal k from the training runs
         knn = KNeighborsRegressor(n_neighbors=k_opt)
@@ -247,7 +247,7 @@ def KNN(k_range):
 
 
 
-#--------------------------------------- MULTI-LAYER PERCEPTRON ---------------------------------------
+#------------------- MULTI-LAYER PERCEPTRON ---------------------------------------
 def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
 
     #-------------------------------------------------------------------------------
@@ -297,13 +297,13 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
     train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True)  # batches
-    #
+    
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
     valid_batch_size = int(0.25 * train_batch_size)
     valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  # batches
-    #
+    
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
@@ -334,7 +334,7 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
             loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
             loss_batch.backward() # backward pass
             optimizer.step() # updating weights and biases
-
+            #
             loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
             N += xb.size(0) # sum over number of samples in each batch
         
@@ -365,22 +365,25 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     
 
     # Looping over epochs, stopping either at training or validation threshold loss:
-    loss_valid_prev = None # initializing the validation loss averaged over batches
     loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
     N_epochs = int(0) # initializing epochs looped over
+
     for epoch in range(epochs): 
         model, loss_train = train(train_loader) # 1 training update step
         loss_valid = validate(model, valid_loader) # validation loss using updated train step params
-
+        #
         loss_array[epoch, 0] = loss_train 
         loss_array[epoch, 1] = loss_valid
-
         # Stop condition based off validation loss to prevent overfitting:
-        # if loss_valid_prev is not None: 
-        #     if abs(loss_valid - loss_valid_prev) <= delta_threshold:
-        #         break
-
-        loss_valid_prev = loss_valid 
+        avg_size = 5  # number of epochs to average over 
+        #
+        if epoch + 1 >= 2 * avg_size: # checking for stop condition only after 2 * avg_size
+            curr_avg = loss_array[epoch-avg_size+1: epoch+1, 1].mean()
+            prev_avg = loss_array[epoch-2*avg_size+1: epoch-avg_size+1, 1].mean()
+            #
+            if abs(curr_avg - prev_avg) <= delta_threshold:
+                break
+       
         N_epochs += 1
 
  
@@ -419,4 +422,4 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
 
 
     
-MLP(400, 128, 1e-4, 1e-4)
+MLP(400, 128, 1e-5, 1e-4)
