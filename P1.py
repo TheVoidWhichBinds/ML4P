@@ -248,7 +248,7 @@ def KNN(k_range):
 
 
 #--------------------------------------- MULTI-LAYER PERCEPTRON ---------------------------------------
-def MLP(epochs, batch_size, delta_threshold, learning_rate):
+def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
 
     #-------------------------------------------------------------------------------
     # Generating MLP class:
@@ -296,17 +296,19 @@ def MLP(epochs, batch_size, delta_threshold, learning_rate):
     x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
-    train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)  # batches
+    train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True)  # batches
     #
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
-    valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=batch_size, shuffle=False)  # batches
+    valid_batch_size = int(0.25 * train_batch_size)
+    valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  # batches
     #
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
-    test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False)  # batches
+    test_batch_size = int(0.5 * train_batch_size)
+    test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  # batches
 
     # Regression Prep:
     dim_input = x_train.shape[1] # feature dimension = dimension of input layer
@@ -406,9 +408,13 @@ def MLP(epochs, batch_size, delta_threshold, learning_rate):
     # Plotting:
     plt.figure()
     plt.title('MLP Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Validation Loss')
+    plt.scatter(epochs, loss_array[:,1])
+    plt.show()
 
 
 
 
     
-
+MLP(10, 128, 1e-2, 1e-4)
