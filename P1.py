@@ -399,7 +399,7 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     #     return loss_avg
 
 
-    return model, loss_array[:epoch+1, :]
+
     #-------------------------------------------------------------------------------------------
 
 
@@ -410,11 +410,11 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     plt.title('MLP Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Validation Loss')
-    plt.scatter(epochs, loss_array[:,1])
+    plt.scatter(np.arange(1,epochs+1,1), loss_array[:,1])
     plt.show()
 
 
 
 
     
-MLP(10, 128, 1e-2, 1e-4)
+MLP(100, 128, 1e-2, 1e-4)
