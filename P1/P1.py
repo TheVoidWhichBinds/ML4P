@@ -367,7 +367,7 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     # Looping over epochs, stopping either at training or validation threshold loss:
     loss_valid_prev = None # initializing the validation loss averaged over batches
     loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
-
+    N_epochs = int(0) # initializing epochs looped over
     for epoch in range(epochs): 
         model, loss_train = train(train_loader) # 1 training update step
         loss_valid = validate(model, valid_loader) # validation loss using updated train step params
@@ -376,11 +376,12 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
         loss_array[epoch, 1] = loss_valid
 
         # Stop condition based off validation loss to prevent overfitting:
-        if loss_valid_prev is not None: 
-            if abs(loss_valid - loss_valid_prev) <= delta_threshold:
-                break
+        # if loss_valid_prev is not None: 
+        #     if abs(loss_valid - loss_valid_prev) <= delta_threshold:
+        #         break
 
         loss_valid_prev = loss_valid 
+        N_epochs += 1
 
  
     # Test:
@@ -410,11 +411,12 @@ def MLP(epochs, train_batch_size, delta_threshold, learning_rate):
     plt.title('MLP Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Validation Loss')
-    plt.scatter(np.arange(1,epochs+1,1), loss_array[:,1])
-    plt.show()
+    plt.scatter(np.arange(1,N_epochs+1), loss_array[:N_epochs,1], s=4)
+    plt.yscale('log')
+    plt.savefig('./P1/MLP_loss')
 
 
 
 
     
-MLP(100, 128, 1e-2, 1e-4)
+MLP(400, 128, 1e-4, 1e-4)
