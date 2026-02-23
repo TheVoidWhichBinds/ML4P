@@ -285,7 +285,6 @@ def train_and_validate(
         plt.savefig(f'{out_dir}/{model_name}_loss.png')
 
 
-
     
     def test(test_loader):
         """
@@ -334,17 +333,18 @@ def linear_regression(epochs, delta_threshold, learning_rate):
     #--------------------------------------------------
 
     #-------------------------------------------------------------------------------
-    # Regression Prep:
+    # Training and validating:
+    model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
+
     train_and_validate(
-        model = LinearRegression(input_dim=x_train.shape[1], output_dim=1),
-        optimizer = torch.optim.Adam(model.parameters(), lr= learning_rate),
+        model = model,
+        optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
         loss_func = nn.MSELoss(),
         epochs = epochs,
-        delta_threshold = delta_threshold,
-        learning_rate = learning_rate
+        delta_threshold = delta_threshold
     )
 
-
+linear_regression(100, 1e-3, 1e-4)
     
 
     
