@@ -65,7 +65,7 @@ test_features = np.load('./data/test_features.npy')
 #------------------------------------------ LINEAR REGRESSION ------------------------------------------
 def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
     
-    #-------------------------------------------------------------------------------
+    #-------------------------------------------------
     # Generating linear regression class from PyTorch:
     class LinearRegression(nn.Module):
         #
@@ -75,7 +75,11 @@ def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
         #
         def forward(self, x):
             return self.lin(x)
+    #--------------------------------------------------
 
+
+
+    #-------------------------------------------------------------------------------
     # Data prep:
     x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
@@ -98,7 +102,7 @@ def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
 
 
 
-    #------------------------------------------------------------------------------
+    #---------------------------------------------------------------------------------------------------------
     # Train:
     def train():
 
@@ -156,7 +160,7 @@ def linear_regression(epochs, batch_size, delta_threshold, learning_rate):
 
     # Validation loss returned:
     return validate()
-    #------------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------------------------------
 
 
 # Running linear regression with validation loss return:
@@ -248,62 +252,163 @@ def MLP(epochs, batch_size, delta_threshold, learning_rate):
 
     #-------------------------------------------------------------------------------
     # Generating MLP class:
+    class MultiLayerPerceptron(nn.Module):
+        #
+        def __init__(self, dims:list[int], activation: nn.Module | None = None):
+            super().__init__()
+            """
+            Creates the layers with dimensions given by dims
+            ----- Parameters -------------------------------
+            dims: list of integers
+                Dimension of each layer, including input and output
+            activation: PyTorch Module
+                activation function to be applied to each layer
+            """
+            if activation is None:
+                activation = nn.ReLU() # default activation function
+            # .layers is a list of modules (linear regression) between layers:
+            self.layers = nn.ModuleList( 
+                [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
+            )
+            self.act = activation # activation function
 
-    
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            """
+            Forward pass - runs data thru layers
+            ------ Parameters ------------------
+            x: tensor
+                Input data
+            ------ Returns ------
+            x: tensor
+                Output of NN - estimate of label y
+            """
+            for layer in self.layers[:-1]: # for each layer (up to 2nd to last) ...
+                x = self.act(layer(x)) # push the input data through a layer, input into activation func
+            x = self.layers[-1](x) # 2nd to last to output (label) doesn't get activation func
+            return x
+    #-----------------------------------------------------------------------------------------------------
+
+
+
+    #-------------------------------------------------------------------------------
     # Data prep:
     x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
-    dataset = TensorDataset(x_train, y_train)
+    train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)  # batches
     #
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
+    valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=batch_size, shuffle=False)  # batches
     #
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
+    test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False)  # batches
 
     # Regression Prep:
-    model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
+    dim_input = x_train.shape[1] # feature dimension = dimension of input layer
+    dim_output = 1 # label dimension = dimension of output layer
+    model = MultiLayerPerceptron([dim_input, 128, 64, dim_output], activation=nn.ReLU())
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr= learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     #--------------------------------------------------------------------------------
 
 
 
-    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------------------------------------------
     # Train: 
-    def train():
+    def train(train_loader):
+        #
+        model.train()
+        loss_total = 0.0
+        N = 0.0
+        
+        for xb, yb in train_loader: # loop over batches
+            optimizer.zero_grad() # refreshing gradient-tracker
+            f = model(xb) # forward pass
+            loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
+            loss_batch.backward() # backward pass
+            optimizer.step() # updating weights and biases
 
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)  # dividing train data into batches:
-        loss_prev = None
+            loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+            N += xb.size(0) # sum over number of samples in each batch
+        
+        loss_avg = loss_total/N
 
+        return model, loss_avg
+    
 
-        for epoch in range(epochs): 
-            loss_total = 0.0 # initializing sum of squares loss over all data
-            N = 0 # initializing sum of number of data 
-            for xb, yb in loader: # loop over batches
-                optimizer.zero_grad() # refreshing gradient-tracker
+    # Validate:
+    def validate(model, valid_loader):
+        #
+        model.eval()
+        loss_total = 0.0
+        N = 0.0
+
+        # Running with training weights and biases on validation data, without updating:
+        with torch.no_grad():
+            for xb, yb in valid_loader:
                 f = model(xb) # forward pass
                 loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
-                loss_batch.backward() # backward pass
-                optimizer.step() # updating weights and biases
                 #
                 loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
                 N += xb.size(0) # sum over number of samples in each batch
+            
+        loss_avg = loss_total/N
 
-            loss_epoch = loss_total / N  # epoch mean loss 
+        return loss_avg
+    
 
-            # Checking delta of epoch loss to terminate loop if threshold met:
-            if loss_prev is not None:
-                loss_delta = abs(loss_epoch - loss_prev)
-                if loss_delta <= delta_threshold:
-                    W = model.lin.weight
-                    b = model.lin.bias
-                    #print(f"STOP epoch {epoch+1}: loss={loss_epoch:.6g}, Δloss={loss_delta:.3g}, ||W||={W.norm().item():.3g}, b={b.item():.3g}")
-                    break
+    # Looping over epochs, stopping either at training or validation threshold loss:
+    loss_valid_prev = None # initializing the validation loss averaged over batches
+    loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
 
-            loss_prev = loss_epoch 
-        
-        return W, b
+    for epoch in range(epochs): 
+        model, loss_train = train(train_loader) # 1 training update step
+        loss_valid = validate(model, valid_loader) # validation loss using updated train step params
+
+        loss_array[epoch, 0] = loss_train 
+        loss_array[epoch, 1] = loss_valid
+
+        # Stop condition based off validation loss to prevent overfitting:
+        if loss_valid_prev is not None: 
+            if abs(loss_valid - loss_valid_prev) <= delta_threshold:
+                break
+
+        loss_valid_prev = loss_valid 
+
+ 
+    # Test:
+    # def test(test_loader):
+    #     #
+    #     with torch.no_grad():
+    #         for xb, yb in test_loader:
+    #             f = model(xb) # forward pass
+    #             loss_batch = loss_fn(f, yb) # loss averaged over batch (1/B)
+    #             #
+    #             loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+    #             N += xb.size(0) # sum over number of samples in each batch
+            
+    #     loss_avg = loss_total/N
+
+    #     return loss_avg
+
+
+    return model, loss_array[:epoch+1, :]
+    #-------------------------------------------------------------------------------------------
+
+
+
+    #----------------------------------------------------------------------------------------
+    # Plotting:
+    plt.figure()
+    plt.title('MLP Validation Loss')
+
+
+
+
+    
+
