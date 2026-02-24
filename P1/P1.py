@@ -14,6 +14,8 @@ from sklearn.neighbors import KNeighborsRegressor
 
 
 
+
+
 #------------------- DOWNLOADS & SETUP ---------------------------------------------------------------------------
 # Downloading labels:
 path_labels = "./data/labels.fits"
@@ -120,7 +122,6 @@ def KNN(k_range: list[int]):
     #-------------------------------
    
 
-
     #-------------
     # Parity plot:
     model.set_params(n_neighbors=k_opt)
@@ -140,6 +141,7 @@ def KNN(k_range: list[int]):
 
     return k_opt, float(loss_valid[i_best]), float(loss_test)
 #----------------------------------------------------------------------------------------------------------------
+
 
 
 
@@ -331,6 +333,7 @@ def TVT(
     plt.savefig(f'./P1/{model_name}_parity.png')
     print(f'{model_name} average test loss is {loss_test:.5}')
 #----------------------------------------------------------------------------------------------------------------
+
 
 
 
