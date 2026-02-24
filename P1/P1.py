@@ -1,7 +1,3 @@
-# NOTES:
-# Consider Layer Normalization, Weight Normalization, Normalization Propagation
-
-
 
 import numpy as np
 from astropy.io import fits 
@@ -10,6 +6,10 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from sklearn.neighbors import KNeighborsRegressor
+
+
+
+
 
 
 
@@ -57,8 +57,8 @@ sig = train_features.std(axis=0, keepdims=True) + 1e-8
 train_features = (train_features - mu) / sig
 valid_features = (valid_features - mu) / sig
 test_features  = (test_features  - mu) / sig
-#-------------------------------------------
-  
+#-----------------------------------------------------------------------------------------------------------------
+
 
 
 
@@ -70,15 +70,7 @@ test_features  = (test_features  - mu) / sig
 
 #------------------- K NEAREST NEIGHBORS --------------------------------------------------------------------------
 def KNN(k_range: list[int]):
-    """
-    K-Nearest Neighbors Algorithm. Operates differently than 
-    Linear Regression or MLP. Finds the k that minimizes the
-    loss function.
-    ------- Params ----------
-    k_range: list[int]
-        list of k values to average over
-    """
-    #---------------------------------------------------------
+    #-----------
     # Data prep:
     x_train = train_features.astype(np.float32)
     y_train = np.array(train_labels["LOGG"], dtype=np.float32)
@@ -88,58 +80,68 @@ def KNN(k_range: list[int]):
     #
     x_test = test_features.astype(np.float32)
     y_test = np.array(test_labels["LOGG"], dtype=np.float32)
-    #---------------------------------------------------------
+    #-------------------------------------------------------
 
 
-    #------------------------------------------------------------------------------------------------
-    # Train:
-    def train():
+    #-----------------
+    # Regression Prep:
+    model = KNeighborsRegressor()
+    #----------------------------
+
+
+    #------------------------------
+    # Train + Validation loss vs k:
+    loss_train = np.empty(len(k_range), dtype=np.float32)
+    loss_valid = np.empty(len(k_range), dtype=np.float32)
+
+    for i, k in enumerate(k_range):
+        model.set_params(n_neighbors=int(k))
+        model.fit(x_train, y_train)
         #
-        loss_train = np.empty(len(k_range), dtype=np.float32) # initializing training loss for each k
+        f_train = model.predict(x_train)
+        loss_train[i] = ((y_train - f_train) ** 2).mean()
+        #
+        f_valid = model.predict(x_valid)
+        loss_valid[i] = ((y_valid - f_valid) ** 2).mean()
 
-        for i, k in enumerate(k_range):
-            # Running KNN:
-            knn = KNeighborsRegressor(n_neighbors=k)
-            knn.fit(x_train, y_train) 
-            f_train = knn.predict(x_train) 
-            loss_train[i] = ((y_train - f_train)**2).mean() # MSE loss
-            #
-            i_min = int(np.argmin(loss_train))  # index of minimum loss over k_range
-            k_opt = k_range[i_min] # best training k
+    i_best = int(np.argmin(loss_valid))
+    k_opt = int(k_range[i_best])
 
-        return k_opt
-    
-
-    # Validate:
-    def validate():
-        # Running KNN:
-        k_opt = train(k_range) # extracting the optimal k from the training runs
-        knn = KNeighborsRegressor(n_neighbors=k_opt)
-        knn.fit(x_valid, y_valid)
-        f_valid = knn.predict(x_valid) 
-        loss_valid = ((y_valid - f_valid)**2).mean() 
-
-        return k_opt, loss_valid
+    plt.figure()
+    plt.title("KNN Training & Validation Loss vs k")
+    plt.xlabel("k")
+    plt.ylabel("MSE")
+    plt.plot(k_range, loss_train, marker="o", linewidth=1, label="Training MSE")
+    plt.plot(k_range, loss_valid, marker="o", linewidth=1, label="Validation MSE")
+    plt.axvline(k_opt, linestyle="--")
+    plt.yscale("log")
+    plt.legend()
+    plt.savefig("./P1/KNN_loss.png")
+    #-------------------------------
+   
 
 
-    # Test:
-    # def test(k_range: list[int]):
-    #      # Running KNN:
-    #     k_opt = train(k_range) # extracting the optimal k from the training runs
-    #     knn = KNeighborsRegressor(n_neighbors=k_opt)
-    #     knn.fit(x_test, y_test)
-    #     f_test = knn.predict(x_test) 
-    #     loss_test = ((y_train - f_test)**2).mean() 
-        
-    #     return print(f'Test MSE loss:{loss_test}')
+    #-------------
+    # Parity plot:
+    model.set_params(n_neighbors=k_opt)
+    model.fit(x_train, y_train)
+    y_pred = model.predict(x_test)
+    loss_test = ((y_test - y_pred) ** 2).mean()
 
-    return validate(k_range)
-    #-----------------------------------------------------------------------------------------------
-    
-# Running K-Nearest-Neighbors with validation loss return:
-# knn_results = KNN(np.arange(2,10,1)) # storing k_opt (from training) and validation loss
-# print(f"optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}")
-  
+    plt.figure()
+    plt.title(f"KNN Parity Plot (k={k_opt})")
+    plt.xlabel("Labels y")
+    plt.ylabel("Test Prediction ŷ")
+    plt.scatter(y_test, y_pred, s=6)
+    mn, mx = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
+    plt.plot([mn, mx], [mn, mx])
+    plt.savefig("./P1/KNN_parity.png")
+    #---------------------------------
+
+    return k_opt, float(loss_valid[i_best]), float(loss_test)
+#----------------------------------------------------------------------------------------------------------------
+
+
 
 
 
@@ -166,7 +168,7 @@ y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
 y_test = torch.from_numpy(y_np).view(-1, 1)
 test_batch_size = int(N_test/4)
 test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  
-#-------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------
   
 
 
@@ -174,6 +176,10 @@ test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_si
 
 
 
+
+
+
+#------------------- TRAIN, VALIDATE, TEST NN FUNCTION -----------------------------------------------------------
 def TVT(            
         model,                    
         optimizer,                
@@ -324,7 +330,7 @@ def TVT(
     plt.plot([mn, mx], [mn, mx])
     plt.savefig(f'./P1/{model_name}_parity.png')
     print(f'{model_name} average test loss is {loss_test:.5}')
-    #---------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------
 
 
 
@@ -363,11 +369,13 @@ def linear_regression(epochs, delta_threshold, learning_rate):
         valid_loader = valid_loader,
         test_loader = test_loader
     )
-    #----------------------------
+#----------------------------------------------------------------------------------------------------------------
 
     
 
     
+
+
 
 
 
@@ -431,7 +439,12 @@ def MLP(epochs, delta_threshold, learning_rate):
         valid_loader = valid_loader,
         test_loader = test_loader
     )
-    #----------------------------
+#----------------------------------------------------------------------------------------------------------------
+
+
+
+
+
 
 
 
@@ -439,7 +452,11 @@ def MLP(epochs, delta_threshold, learning_rate):
 
 #------------------- LR & MLP FUNCTION CALLS  --------------------------------------------------------------------
 # Running linear regression ML:
-#linear_regression(100, 1e-3, 1e-4)
+#linear_regression(400, 1e-3, 1e-4)
     
+# Running K-nearest-neighbors ML:
+knn_results = KNN(np.arange(2,10,1)) # storing k_opt (from training) and validation loss
+print(f"optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}")
+  
 # Running multi-layer perceptron ML:
-MLP(400, 128, 1e-4)
+#MLP(400, 128, 1e-4)
