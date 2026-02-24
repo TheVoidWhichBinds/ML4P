@@ -169,7 +169,7 @@ test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_si
 
 
 
-def train_and_validate(            
+def TVT(            
         model,                    
         optimizer,                
         loss_func,                
@@ -180,9 +180,10 @@ def train_and_validate(
         test_loader           
         ):
     """
-    For Linear Regression and Multi-Layer Perceptron. Not KNN
-    Contains train function, validate function, epoch loop and 
-    train and validation loss plotting.
+    For Linear Regression and Multi-Layer Perceptron. Not KNN.
+    Contains train function, validate function, epoch loop over
+    both, train and validation loss plotting, test function, 
+    test data parity plot.
     """
     #---------------------------------------------------------------
     def train():
@@ -317,7 +318,7 @@ def train_and_validate(
     mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
     plt.plot([mn, mx], [mn, mx])
     plt.savefig(f'./P1/{model_name}_parity.png')
-    print(f'MLP average test loss is {loss_test:.5}')
+    print(f'{model_name} average test loss is {loss_test:.5}')
     #------------------------------------------------
 
 
@@ -328,7 +329,6 @@ def train_and_validate(
 
 #------------------- LINEAR REGRESSION ------------------------------------------
 def linear_regression(epochs, delta_threshold, learning_rate):
-    
     #-------------------------------------------------
     # Generating linear regression class from PyTorch:
     class LinearRegression(nn.Module):
@@ -339,13 +339,14 @@ def linear_regression(epochs, delta_threshold, learning_rate):
         #
         def forward(self, x):
             return self.lin(x)
-    #--------------------------------------------------
+    #-------------------------
 
-    #-------------------------------------------------------------------------------
-    # Training and validating:
+    #-----------------------
+    # Regression prep:
     model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
 
-    train_and_validate(
+    # Train, Validate, Test:
+    TVT(
         model = model,
         optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
         loss_func = nn.MSELoss(),
@@ -355,21 +356,19 @@ def linear_regression(epochs, delta_threshold, learning_rate):
         valid_loader = valid_loader,
         test_loader = test_loader
     )
+    #------------------------------------------------------------------------
 
-linear_regression(100, 1e-3, 1e-4)
+
     
 
     
 
-    
 
 
 
-
-#------------------- MULTI-LAYER PERCEPTRON -------------------------------------------------------------------
+#------------------- MULTI-LAYER PERCEPTRON ------------------------------------
 def MLP(epochs, delta_threshold, learning_rate):
-
-    #----------------------------------------------------------------------------------------------------
+    #----------------------
     # Generating MLP class:
     class MultiLayerPerceptron(nn.Module):
         #
@@ -406,24 +405,35 @@ def MLP(epochs, delta_threshold, learning_rate):
                 x = self.act(layer(x)) # push the input data through a layer, input into activation func
             x = self.layers[-1](x) # 2nd to last to output (label) doesn't get activation func
             return x
-    #----------------------------------------------------------------------------------------------------
+    #---------------
 
 
-
-    #-------------------------------------------------------------------------------
+    #-----------------
     # Regression Prep:
     dim_input = x_train.shape[1] # feature dimension = dimension of input layer
     dim_output = 1 # label dimension = dimension of output layer
     model = MultiLayerPerceptron([dim_input, 128, 64, dim_output], activation=nn.ReLU())
-    loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    
+    # Train, Validate, Test:
+    TVT(
+        model = model,
+        optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
+        loss_func = nn.MSELoss(),
+        epochs = epochs,
+        delta_threshold = delta_threshold,
+        train_loader = train_loader,
+        valid_loader = valid_loader,
+        test_loader = test_loader
+    )
     #--------------------------------------------------------------------------------
 
 
 
-    #-------------------------------------------------------------------------------------------------------
-    
 
 
+#------------------- LR & MLP FUNCTION CALLS  ------------------------------------
+# Running linear regression ML:
+#linear_regression(100, 1e-3, 1e-4)
     
-#MLP(400, 128, 1e-5, 1e-4)
+# Running multi-layer perceptron ML:
+MLP(400, 128, 1e-4)
