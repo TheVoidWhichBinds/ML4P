@@ -10,14 +10,11 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from sklearn.neighbors import KNeighborsRegressor
-# TensorFlow/Keras imports removed because this script uses PyTorch for models.
-# If you need Keras functionality, install TensorFlow and uncomment the lines below.
-# from tensorflow.keras.models import Sequential
-# from tensorflow.keras.layers import Flatten, Dense
 
 
 
-#------------------- DOWNLOADS & SETUP ------------------------------------------------
+
+#------------------- DOWNLOADS & SETUP ---------------------------------------------------------------------------
 # Downloading labels:
 path_labels = "./data/labels.fits"
 allstar = fits.open(path_labels) # loads star database data
@@ -54,7 +51,13 @@ test_labels = RGB_labels[I_test]
 train_features = np.load('./data/train_features.npy')
 valid_features = np.load('./data/valid_features.npy')
 test_features = np.load('./data/test_features.npy')
-#----------------------------------------------------------------------------------------------------------------
+# Normalizing/standardizing features:
+mu = train_features.mean(axis=0, keepdims=True)
+sig = train_features.std(axis=0, keepdims=True) + 1e-8
+train_features = (train_features - mu) / sig
+valid_features = (valid_features - mu) / sig
+test_features  = (test_features  - mu) / sig
+#-------------------------------------------
   
 
 
@@ -63,7 +66,9 @@ test_features = np.load('./data/test_features.npy')
 
 
 
-#------------------- K NEAREST NEIGHBORS ------------------------------------------
+
+
+#------------------- K NEAREST NEIGHBORS --------------------------------------------------------------------------
 def KNN(k_range: list[int]):
     """
     K-Nearest Neighbors Algorithm. Operates differently than 
@@ -148,20 +153,20 @@ x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
 y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
 y_train = torch.from_numpy(y_np).view(-1, 1)
 train_batch_size = int(N_train/4)
-train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True)  # batches
+train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True) 
     
 x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
 y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
 y_valid = torch.from_numpy(y_np).view(-1, 1)
 valid_batch_size = int(N_valid/4)
-valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  # batches
+valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  
     
 x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
 y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
 y_test = torch.from_numpy(y_np).view(-1, 1)
 test_batch_size = int(N_test/4)
-test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  # batches
-#-----------------------------------------------------------------------------------------------------------------
+test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  
+#-------------------------------------------------------------------------------------------------
   
 
 
@@ -185,7 +190,7 @@ def TVT(
     both, train and validation loss plotting, test function, 
     test data parity plot.
     """
-    #---------------------------------------------------------------
+    #-----------
     def train():
         """
         Uses batches to minimize training loss.
@@ -218,7 +223,7 @@ def TVT(
     #-------------------------------------------------------------------
 
 
-    #---------------------------------------------------------------
+    #--------------
     def validate():
         """
         Runs validation data thru network using training parameters.
@@ -269,7 +274,7 @@ def TVT(
                 break
     
         N_epochs += 1
-    #------------------------------------------------------
+    #----------------
 
 
     #---------------------------------------
@@ -319,7 +324,7 @@ def TVT(
     plt.plot([mn, mx], [mn, mx])
     plt.savefig(f'./P1/{model_name}_parity.png')
     print(f'{model_name} average test loss is {loss_test:.5}')
-    #------------------------------------------------
+    #---------------------------------------------------------
 
 
 
@@ -327,7 +332,9 @@ def TVT(
 
 
 
-#------------------- LINEAR REGRESSION ------------------------------------------
+
+
+#------------------- LINEAR REGRESSION ---------------------------------------------------------------------------
 def linear_regression(epochs, delta_threshold, learning_rate):
     #-------------------------------------------------
     # Generating linear regression class from PyTorch:
@@ -341,7 +348,7 @@ def linear_regression(epochs, delta_threshold, learning_rate):
             return self.lin(x)
     #-------------------------
 
-    #-----------------------
+    #-----------------
     # Regression prep:
     model = LinearRegression(input_dim=x_train.shape[1], output_dim=1)
 
@@ -356,17 +363,16 @@ def linear_regression(epochs, delta_threshold, learning_rate):
         valid_loader = valid_loader,
         test_loader = test_loader
     )
-    #------------------------------------------------------------------------
-
-
-    
+    #----------------------------
 
     
 
+    
 
 
 
-#------------------- MULTI-LAYER PERCEPTRON ------------------------------------
+
+#------------------- MULTI-LAYER PERCEPTRON ---------------------------------------------------------------------
 def MLP(epochs, delta_threshold, learning_rate):
     #----------------------
     # Generating MLP class:
@@ -425,13 +431,13 @@ def MLP(epochs, delta_threshold, learning_rate):
         valid_loader = valid_loader,
         test_loader = test_loader
     )
-    #--------------------------------------------------------------------------------
+    #----------------------------
 
 
 
 
 
-#------------------- LR & MLP FUNCTION CALLS  ------------------------------------
+#------------------- LR & MLP FUNCTION CALLS  --------------------------------------------------------------------
 # Running linear regression ML:
 #linear_regression(100, 1e-3, 1e-4)
     
