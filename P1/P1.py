@@ -456,7 +456,8 @@ def MLP(epochs, delta_threshold, learning_rate):
     
 # Running K-nearest-neighbors ML:
 knn_results = KNN(np.arange(2,10,1)) # storing k_opt (from training) and validation loss
-print(f"optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}")
+print(f'KNN optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}')
   
 # Running multi-layer perceptron ML:
 #MLP(400, 128, 1e-4)
+#-----------------------------------------------------------------------------------------------------------------
