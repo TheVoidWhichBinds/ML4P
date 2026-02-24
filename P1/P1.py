@@ -174,14 +174,17 @@ def train_and_validate(
         optimizer,                
         loss_func,                
         epochs,                   
-        delta_threshold           
+        delta_threshold,
+        train_loader,
+        valid_loader,
+        test_loader           
         ):
     """
     For Linear Regression and Multi-Layer Perceptron. Not KNN
     Contains train function, validate function, epoch loop and 
     train and validation loss plotting.
     """
- 
+    #---------------------------------------------------------------
     def train():
         """
         Uses batches to minimize training loss.
@@ -189,7 +192,8 @@ def train_and_validate(
         train_loader:
             Training data subdivided into batches of prescribed size
         optimizer:
-            Optimizer used to minimize training loss as a function of weights and biases
+            Optimizer used to minimize training loss as a function 
+            of weights and biases
         model:
             Custom model (LR, MLP) for hidden layers and activations
         loss_func:
@@ -209,13 +213,12 @@ def train_and_validate(
             loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
             N += xb.size(0) # sum over number of samples in each batch
         
-        loss_avg = loss_total/N
-
-        return model, loss_avg
-    
+        return model, loss_total/N # model with updated params, avg loss
+    #-------------------------------------------------------------------
 
 
-    def validate(model, valid_loader):
+    #---------------------------------------------------------------
+    def validate():
         """
         Runs validation data thru network using training parameters.
         ------ Params ----------------------------------------------
@@ -238,20 +241,19 @@ def train_and_validate(
                 #
                 loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
                 N += xb.size(0) # sum over number of samples in each batch
-            
-        loss_avg = loss_total/N
 
-        return loss_avg
-    
+        return loss_total/N
+    #----------------------------------------------------------------------------------------
 
 
+    #---------------------------------------------------------------------------------------
     # Looping over epochs, stopping either at training or validation threshold loss:
     loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
     N_epochs = int(0) # initializing epochs looped over
 
     for epoch in range(epochs): 
-        model, loss_train = train(train_loader) # 1 training update step
-        loss_valid = validate(model, valid_loader) # validation loss using updated train step params
+        model, loss_train = train() # 1 training update step
+        loss_valid = validate() # validation loss using updated train step params
         #
         loss_array[epoch, 0] = loss_train 
         loss_array[epoch, 1] = loss_valid
@@ -266,50 +268,57 @@ def train_and_validate(
                 break
     
         N_epochs += 1
+    #------------------------------------------------------
 
 
-
-    def plot_loss(out_dir="./P1"):
-        """
-        Plots train and validation loss as a function of epoch.
-        """
-        model_name = model.__class__.__name__
-        plt.figure()
-        plt.title(f'{model_name} Training & Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss Curves')
-        plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 0], s=4, label='Training Loss')
-        plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 1], s=4, label='Validation Loss')
-        plt.yscale('log')
-        plt.legend()
-        plt.savefig(f'{out_dir}/{model_name}_loss.png')
+    #---------------------------------------
+    # Plotting training and validation loss:
+    model_name = model.__class__.__name__
+    plt.figure()
+    plt.title(f'{model_name} Training & Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss Curves')
+    plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 0], s=4, label='Training Loss')
+    plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 1], s=4, label='Validation Loss')
+    plt.yscale('log')
+    plt.legend()
+    plt.savefig(f'./P1/{model_name}_loss.png')
+    #-----------------------------------------
 
 
-    
-    def test(test_loader):
-        """
+    #-------------------------------------------
+    def test():
+        model.eval()
+        loss_total, N = 0.0, 0
+        y_true, y_pred = [], []
 
-        """
         with torch.no_grad():
             for xb, yb in test_loader:
-                f = model(xb) # forward pass
-                loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
-                #
-                loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
-                N += xb.size(0) # sum over number of samples in each batch
-            
-        loss_avg = loss_total/N
+                f = model(xb)
+                loss_total += loss_func(f, yb).item() * xb.size(0)
+                N += xb.size(0)
+                y_true.append(yb)
+                y_pred.append(f)
 
-        return loss_avg
-
-
-
+        y_true = torch.cat(y_true).squeeze().numpy()
+        y_pred = torch.cat(y_pred).squeeze().numpy()
+        return loss_total/N, y_true, y_pred
+    #--------------------------------------
 
 
-
-
-
-
+    #-------------------------------------------------------
+    # Parity Plot (predicted test data vs true test labels):
+    loss_test, y_true, y_pred = test()
+    plt.figure()
+    plt.title(f'{model_name} Parity Plot')
+    plt.xlabel("Labels y")
+    plt.ylabel("Test Prediction ŷ")
+    plt.scatter(y_true, y_pred, s=6)
+    mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
+    plt.plot([mn, mx], [mn, mx])
+    plt.savefig(f'./P1/{model_name}_parity.png')
+    print(f'MLP average test loss is {loss_test:.5}')
+    #------------------------------------------------
 
 
 
@@ -341,7 +350,10 @@ def linear_regression(epochs, delta_threshold, learning_rate):
         optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
         loss_func = nn.MSELoss(),
         epochs = epochs,
-        delta_threshold = delta_threshold
+        delta_threshold = delta_threshold,
+        train_loader = train_loader,
+        valid_loader = valid_loader,
+        test_loader = test_loader
     )
 
 linear_regression(100, 1e-3, 1e-4)
@@ -414,4 +426,4 @@ def MLP(epochs, delta_threshold, learning_rate):
 
 
     
-MLP(400, 128, 1e-5, 1e-4)
+#MLP(400, 128, 1e-5, 1e-4)
