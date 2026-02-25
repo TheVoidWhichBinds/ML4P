@@ -758,26 +758,26 @@ single = True
 # Single Runs:
 #-----------------
 if single == True:
-    #KNN_run()
+    KNN_run()
 
-    # LR_single(
-    #     epochs = 800,
-    #     delta_threshold = 1e-4,
-    #     learning_rate = 2e-3,
-    #     batch_fractions = [0.25,0.25,0.25],
-    #     plotting = False
-    # )
-    for seed in range(10,30,1):
-        MLP_single(
-            epochs = 500,
-            delta_threshold = 1e-4,
-            learning_rate = 5.2e-4,
-            batch_fractions = [0.1,0.1,0.1],
-            dim_hidden = [128,100,64,28],
-            plotting = False,
-            seed = seed,
-            activation = nn.LeakyReLU()
-        )
+    LR_single(
+        epochs = 800,
+        delta_threshold = 1e-4,
+        learning_rate = 2e-3,
+        batch_fractions = [0.25,0.25,0.25],
+        plotting = False
+    )
+    
+    MLP_single(
+        epochs = 500,
+        delta_threshold = 1e-4,
+        learning_rate = 5.2e-4,
+        batch_fractions = [0.1,0.1,0.1],
+        dim_hidden = [128,100,64,28],
+        plotting = False,
+        seed = None,
+        activation = nn.LeakyReLU()
+    )
 #-----------------------------
 
 
