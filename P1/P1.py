@@ -202,8 +202,8 @@ def TVT(
     
     loss_test, y_true, y_pred = test()
 
+    #---------------------------------------
     if plotting == True:
-        #---------------------------------------
         # Plotting training and validation loss:
         model_name = model.__class__.__name__
         plt.figure()
@@ -215,10 +215,7 @@ def TVT(
         plt.yscale('log')
         plt.legend()
         plt.savefig(f'./P1/{model_name}_loss.png')
-        #-----------------------------------------
-
-
-        #-------------------------------------------------------
+      
         # Parity Plot (predicted test data vs true test labels):
         plt.figure()
         plt.title(f'{model_name} Parity Plot')
@@ -228,8 +225,9 @@ def TVT(
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
         plt.plot([mn, mx], [mn, mx])
         plt.savefig(f'./P1/{model_name}_parity.png')
-        #print(f'{model_name} final average test loss = {loss_test:.5g}')
-        #---------------------------------------------------------------
+        #-------------------------------------------
+    
+
     return float(loss_test)
 #----------------------------------------------------------------------------------------------------------------
 
@@ -577,117 +575,231 @@ def MLP(
 
 
 
-#------------------- FUNCTION CALLS  --------------------------------------------------------------------
-
-# K-Nearest-Neighbors run:
-#-------------------------
-#KNN(k_range = np.arange(2,25,1))
-
-
-
-
-# Linear Regression hyperparameter sweep:
-#-----------------------------------------
-loss_LR = [] # initializing test loss list
-
-epochs_options = [200, 400, 600, 800] 
-learning_rate_options = [1e-2, 1e-3, 1e-4] 
-batch_fraction_options = [
-    [0.25, 0.25, 0.25],
-    [0.50, 0.50, 0.50],
-    [1.00, 1.00, 1.00],
-]
-
-# Looping over all hyperparameter options:
-for epochs in epochs_options:
-    for learning_rate in learning_rate_options:
-        for batch_fractions in batch_fraction_options:
-            # Calling LR func:
-            loss_test = linear_regression( 
-                epochs=epochs,
-                delta_threshold=1e-4,
-                learning_rate=learning_rate,
-                batch_fractions=batch_fractions,
-                plotting=False
-            )
-            # Creating dictionary keys:
-            run = { 
-                "epochs": epochs,
-                "learning_rate": learning_rate,
-                "batch_fractions": batch_fractions,
-                "test_loss": float(loss_test),
-            }
-            loss_LR.append(run) # appending list of dictionaries
-
-best_LR = min(loss_LR, key=lambda d: d["test_loss"])
-
-print("\nBest Linear Regression run (by test loss):")
-print(
-    f"test_loss = {best_LR['test_loss']:.5g}, "
-    f"epochs = {best_LR['epochs']}, "
-    f"learning_rate = {best_LR['learning_rate']:.1e}, "
-    f"batch_fractions = {best_LR['batch_fractions']}"
-)
-#----------------------------------------------------
-
-
-
-
-# Multi-Layer Perceptron hyperparameter sweep:
-#---------------------------------------------
-loss_MLP = []
-
-epochs_options = [200, 400, 600]
-learning_rate_options = [1e-3, 5e-4, 1e-4]
-batch_fraction_options = [
-    [0.25, 0.25, 0.25],
-    [0.50, 0.50, 0.50],
-    [1.00, 1.00, 1.00],
-]
-dim_hidden_options = [
-    [64],
-    [128, 64],
-    [128, 100, 64, 28],
-]
-
-# Looping over all hyperparameter options:
-for epochs in epochs_options:
-    for learning_rate in learning_rate_options:
-        for batch_fractions in batch_fraction_options:
-            for dim_hidden in dim_hidden_options:
-                # Calling MLP func:
-                loss_test = MLP(
+#------------------- LR, MLP HYPERPARAMETER SWEEPS  --------------------------------------------------------------------
+#-------------------
+def LR_hypersweep(
+        epochs_options: list[int],
+        learning_rate_options: list[float],
+        batch_fractions_options: list[list[float]],
+    ):
+    """
+    Runs LR for combination of hyperparameters: epochs, 
+    learning rate, batch fractions of total data for training, 
+    validation and test data
+    """
+    loss_LR = [] # initializing test loss dict list
+    # Looping over all hyperparameter options:
+    for epochs in epochs_options:
+        for learning_rate in learning_rate_options:
+            for batch_fractions in batch_fractions_options:
+                # Calling LR func:
+                loss_test = linear_regression( 
                     epochs=epochs,
                     delta_threshold=1e-4,
                     learning_rate=learning_rate,
                     batch_fractions=batch_fractions,
-                    dim_hidden=dim_hidden,
-                    plotting=False,
-                    seed=None,
-                    activation=nn.LeakyReLU()
+                    plotting=False
                 )
                 # Creating dictionary keys:
-                run = {
+                run = { 
                     "epochs": epochs,
                     "learning_rate": learning_rate,
                     "batch_fractions": batch_fractions,
-                    "dim_hidden": dim_hidden,
-                    "activation": "LeakyReLU",
-                    "seed": None,
                     "test_loss": float(loss_test),
                 }
-                loss_MLP.append(run) # appending list of dictionaries
+                loss_LR.append(run) # appending list of dictionaries
 
-best_MLP = min(loss_MLP, key=lambda d: d["test_loss"])
+    best_LR = min(loss_LR, key=lambda d: d["test_loss"])
 
-print("\nBest MLP run (by test loss):")
-print(
-    f"test_loss = {best_MLP['test_loss']:.5g}, "
-    f"epochs = {best_MLP['epochs']}, "
-    f"learning_rate = {best_MLP['learning_rate']:.1e}, "
-    f"batch_fractions = {best_MLP['batch_fractions']}, "
-    f"dim_hidden = {best_MLP['dim_hidden']}, "
-    f"activation = {best_MLP['activation']}, "
-    f"seed = {best_MLP['seed']}"
-)
-#-------------------------------
+    print("\nBest Linear Regression run (by test loss):")
+    print(
+        f"test_loss = {best_LR['test_loss']:.5g}, "
+        f"epochs = {best_LR['epochs']}, "
+        f"learning_rate = {best_LR['learning_rate']:.1e}, "
+        f"batch_fractions = {best_LR['batch_fractions']}"
+    )
+#--------------------------------------------------------
+
+
+#--------------------
+def MLP_hypersweep(
+        epochs_options: list[int],
+        learning_rate_options: list[float],
+        batch_fractions_options: list[list[float]],
+        dim_hidden_options: list[list[int]]
+    ):
+    """
+    Runs MLP for combination of hyperparameters: epochs, 
+    learning rate, batch fractions of total data for training, 
+    validation and test data, # of neurons in each hidden layer
+    """
+    loss_MLP = [] # initializing test loss dict list
+    # Looping over all hyperparameter options:
+    for epochs in epochs_options:
+        for learning_rate in learning_rate_options:
+            for batch_fractions in batch_fractions_options:
+                for dim_hidden in dim_hidden_options:
+                    # Calling MLP func:
+                    loss_test = MLP(
+                        epochs=epochs,
+                        delta_threshold=1e-4,
+                        learning_rate=learning_rate,
+                        batch_fractions=batch_fractions,
+                        dim_hidden=dim_hidden,
+                        plotting=False,
+                        seed=None,
+                        activation=nn.LeakyReLU()
+                    )
+                    # Creating dictionary keys:
+                    run = {
+                        "epochs": epochs,
+                        "learning_rate": learning_rate,
+                        "batch_fractions": batch_fractions,
+                        "dim_hidden": dim_hidden,
+                        "activation": "LeakyReLU",
+                        "seed": None,
+                        "test_loss": float(loss_test),
+                    }
+                    loss_MLP.append(run) # appending list of dictionaries
+
+    best_MLP = min(loss_MLP, key=lambda d: d["test_loss"])
+
+    print("\nBest MLP run (by test loss):")
+    print(
+        f"test_loss = {best_MLP['test_loss']:.5g}, "
+        f"epochs = {best_MLP['epochs']}, "
+        f"learning_rate = {best_MLP['learning_rate']:.1e}, "
+        f"batch_fractions = {best_MLP['batch_fractions']}, "
+        f"dim_hidden = {best_MLP['dim_hidden']}, "
+        f"activation = {best_MLP['activation']}, "
+        f"seed = {best_MLP['seed']}"
+    )
+    #-------------------------------
+#------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+#------------------- TUNED SINGLE HYPERPARAMETER SET  --------------------------------------------------------------------
+# K-Nearest-Neighbors run:
+#------------------------------------------------
+def KNN_run(): # no hyperparameter tuning for KNN
+    return KNN(k_range = np.arange(2,25,1))
+#------------------------------------------
+
+
+# Linear Regression run:
+#-----------------------
+def LR_single(
+        epochs: int,
+        delta_threshold: float,
+        learning_rate: float,
+        batch_fractions: list[float],
+        plotting: bool
+    ):
+    loss_test = linear_regression( 
+                    epochs=epochs,
+                    delta_threshold=delta_threshold,
+                    learning_rate=learning_rate,
+                    batch_fractions=batch_fractions,
+                    plotting=plotting
+                )
+    return(print(f'LR averaged test loss = {loss_test:.5g}'))
+#------------------------------------------------------------
+
+
+# Multi-Layer Perceptron run:
+#----------------------------
+def MLP_single(
+        epochs: int,
+        delta_threshold: float,
+        learning_rate: float,
+        batch_fractions: list[float],
+        dim_hidden: list[int],
+        plotting: bool,
+        seed: int | None,
+        activation: nn.Module | None = None
+    ):
+    loss_test = MLP(
+                    epochs=epochs,
+                    delta_threshold=delta_threshold,
+                    learning_rate=learning_rate,
+                    batch_fractions=batch_fractions,
+                    dim_hidden=dim_hidden,
+                    plotting=plotting,
+                    seed=seed,
+                    activation=activation
+                )
+    return(print(f'MLP averaged test loss = {loss_test:.5g}'))
+#-------------------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+#------------------- USER CALLS  -----------------------------------------------------------------------------------------
+# Grandmaster control for if single runs (tuned hyperparams, plotting) = True
+# or hyperparameter sweep (hyperparam options, NO plotting) = False:
+single = False 
+
+# Single Runs:
+#-----------------
+if single == True:
+    KNN_run()
+
+    LR_single(
+        epochs = 800,
+        delta_threshold = 1e-4,
+        learning_rate = 1e-3,
+        batch_fractions = [0.25,0.25,0.25],
+        plotting = True
+    )
+
+    MLP_single(
+        epochs = 800,
+        delta_threshold = 1e-4,
+        learning_rate = 1e-3,
+        batch_fractions = [0.25,0.25,0.25],
+        dim_hidden = [128,64,28],
+        plotting = True,
+        seed = None,
+        activation = nn.ReLU
+    )
+#-----------------------------
+
+
+# Hyperparameter sweep:
+#----------------------
+else:
+    KNN_run()
+
+    LR_hypersweep(
+        epochs_options = [700, 800, 900, 1000], 
+        learning_rate_options = [10e-4, 1e-3, 2e-3, 3e-3, 4e-3],
+        batch_fraction_options = [[0.25, 0.25, 0.25],
+                                  [0.3, 0.3, 0.3],
+                                  [0.2, 0.2, 0.2]]
+    )
+
+    MLP_hypersweep(
+        epochs_options = [500, 600, 700, 800],
+        learning_rate_options = [3e-4, 4e-4, 5e-4, 6e-4, 7e-4],
+        batch_fraction_options = [[0.2, 0.2, 0.2],
+                                  [0.25, 0.25, 0.25],
+                                  [0.3, 0.3, 0.3]],
+        dim_hidden_options = [[500, 200, 100, 50],
+                              [500, 200, 100],
+                              [128, 100, 64, 28]]
+    )
+#------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------------

@@ -8,14 +8,15 @@ print(f'Hello {Professor} or {TA}')
     2. Done.
 
     3. P1.py gives (top to bottom):
-DOWNLOADS & SETUP: downloading the data, rng-seeding labels, masking out non-RGB stars
+DOWNLOADS & SETUP: downloading the data, rng-seeding labels, masking out non-RGB stars.
 TVT: train, validate, and test processes for n-layer NNs, 
     outputting test loss, train and validate loss plots, parity plot of test data.
-KNN(): KNN
-linear_regression(): LR
-MLP(): MLP
-FUNCTION CALLS: where I tweaked the hyperparameters, mainly for LR and MLP
-
+KNN(): KNN.
+LINEAR REGRESSION: LR.
+MULTI-LAYER PERCEPTRON: MLP.
+LR, MLP HYPERPARAMETER SWEEPS: nested for-loops over hyperparameters to optimize them.
+TUNED SINGLE HYPERPARAMETER SET: used results from hyperparameter sweeps to generate final plots.
+USER CALLS: Deciding on single runs or hyperparameter sweeps
 
 
 
@@ -30,8 +31,10 @@ FUNCTION CALLS: where I tweaked the hyperparameters, mainly for LR and MLP
        over various combinations over ranges of their hyperparameters, with the minimum loss
        hyperparameters being chosen.
 
-    3. Methodology described in 2. Results of test set can be seen in the parity plots for
-       each method, saved within the P1 folder.
+    3. Methodology described in 2, with the addition that I ran the hyperparameter sweeps,
+       and as each minimum-loss hyperparameter set came out, I ran the next sweep with a more 
+       narrow range of values around the previously minimizing hyperparameters. Results of test 
+       set can be seen in the parity plots for each method, saved within the P1 folder.
 
 
 Citation: ChatGPT 5.2 was used for general discussions in understanding conceptually the 
