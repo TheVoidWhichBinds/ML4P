@@ -70,6 +70,178 @@ test_features  = (test_features  - mu) / sig
 
 
 
+#------------------- TRAIN, VALIDATE, TEST FUNCTION -----------------------------------------------------------
+def TVT(            
+        model,                    
+        optimizer,                
+        loss_func: nn.Module,                
+        epochs: int,                   
+        delta_threshold: float,
+        train_loader,
+        valid_loader,
+        test_loader,
+        plotting: bool           
+        ):
+    """
+    For Linear Regression and Multi-Layer Perceptron. Not KNN.
+    Contains train function, validate function, epoch loop over
+    both, train and validation loss plotting, test function, 
+    test data parity plot.
+    ------- Params ------------------------
+        model:
+            Custom model (LR, MLP) for hidden layers and activations
+        optimizer:
+            Optimizer used to minimize training loss as a function 
+            of weights and biases
+        loss_func:
+            Chosen metric to decide loss, e.g. mean squared error
+        epochs: int
+            Number of times the NN gets run
+        delta_threshold: float
+            Stopping threshold for change in validation loss, averaged 
+            over epochs
+        train_loader, valid_loader, test_loader:
+            Data subdivided into batches of prescribed size
+        plotting: bool
+            Plots train and validation loss, test parity plots
+        ------- Returns --------------------------------------
+        loss_test: float
+            test loss averaged over batches
+    """
+    #-----------
+    def train():
+        """
+        Uses PyTorch to forward and back propagate weights and biases
+        to minimize training data loss.
+        """
+        model.train()
+        loss_total = 0.0
+        N = 0.0
+        
+        for xb, yb in train_loader: # loop over batches
+            optimizer.zero_grad() # refreshing gradient-tracker
+            f = model(xb) # forward pass
+            loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
+            loss_batch.backward() # backward pass
+            optimizer.step() # updating weights and biases
+            #
+            loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+            N += xb.size(0) # sum over number of samples in each batch
+        
+        return model, loss_total/N # model with updated params, avg loss
+    #-------------------------------------------------------------------
+
+
+    #--------------
+    def validate():
+        """
+        Runs validation data thru network using training parameters.
+        """
+        model.eval()
+        loss_total = 0.0
+        N = 0.0
+
+        # Running with training weights and biases on validation data, without updating:
+        with torch.no_grad():
+            for xb, yb in valid_loader:
+                f = model(xb) # forward pass
+                loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
+                #
+                loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
+                N += xb.size(0) # sum over number of samples in each batch
+
+        return loss_total/N
+    #----------------------------------------------------------------------------------------
+
+
+    #---------------------------------------------------------------------------------------
+    # Looping over epochs, stopping either at training or validation threshold loss:
+    loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
+    N_epochs = int(0) # initializing epochs looped over
+
+    for epoch in range(epochs): 
+        model, loss_train = train() # 1 training update step
+        loss_valid = validate() # validation loss using updated train step params
+        loss_array[epoch, 0] = loss_train 
+        loss_array[epoch, 1] = loss_valid
+        #
+        N_epochs += 1 
+        #
+        avg_size = 10  # number of epochs to average over 
+        if epoch + 1 >= 2 * avg_size: # checking for stop condition only after 2 * avg_size
+            curr_avg = loss_array[epoch-avg_size+1: epoch+1, 1].mean()
+            prev_avg = loss_array[epoch-2*avg_size+1: epoch-avg_size+1, 1].mean()
+            #
+            if abs(curr_avg - prev_avg) <= delta_threshold:
+                break
+    #----------------
+
+
+    #----------
+    def test():
+        """
+        Takes final weights and biases from test and validation epoch loops
+        and calculates test loss.
+        """
+        model.eval()
+        loss_total, N = 0.0, 0
+        y_true, y_pred = [], []
+
+        with torch.no_grad():
+            for xb, yb in test_loader:
+                f = model(xb)
+                loss_total += loss_func(f, yb).item() * xb.size(0)
+                N += xb.size(0)
+                y_true.append(yb)
+                y_pred.append(f)
+
+        y_true = torch.cat(y_true).squeeze().numpy()
+        y_pred = torch.cat(y_pred).squeeze().numpy()
+        return loss_total/N, y_true, y_pred
+    #--------------------------------------
+    
+    loss_test, y_true, y_pred = test()
+
+    if plotting == True:
+        #---------------------------------------
+        # Plotting training and validation loss:
+        model_name = model.__class__.__name__
+        plt.figure()
+        plt.title(f'{model_name} Training & Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss Curves')
+        plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 0], s=4, label='Training Loss')
+        plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 1], s=4, label='Validation Loss')
+        plt.yscale('log')
+        plt.legend()
+        plt.savefig(f'./P1/{model_name}_loss.png')
+        #-----------------------------------------
+
+
+        #-------------------------------------------------------
+        # Parity Plot (predicted test data vs true test labels):
+        plt.figure()
+        plt.title(f'{model_name} Parity Plot')
+        plt.xlabel("Labels y")
+        plt.ylabel("Test Prediction ŷ")
+        plt.scatter(y_true, y_pred, s=6)
+        mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
+        plt.plot([mn, mx], [mn, mx])
+        plt.savefig(f'./P1/{model_name}_parity.png')
+        #print(f'{model_name} final average test loss = {loss_test:.5g}')
+        #---------------------------------------------------------------
+    return float(loss_test)
+#----------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
 #------------------- K NEAREST NEIGHBORS --------------------------------------------------------------------------
 def KNN(k_range: list[int]):
     #-----------
@@ -138,169 +310,8 @@ def KNN(k_range: list[int]):
     plt.plot([mn, mx], [mn, mx])
     plt.savefig("./P1/KNN_parity.png")
     print(f'KNN final average test loss = {loss_test:.5g},' \
-          'with optimal k value = {k_opt}')
+          f' with optimal k value = {k_opt}')
     #--------------------------------------
-#----------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-#------------------- TRAIN, VALIDATE, TEST FUNCTION -----------------------------------------------------------
-def TVT(            
-        model,                    
-        optimizer,                
-        loss_func,                
-        epochs,                   
-        delta_threshold,
-        train_loader,
-        valid_loader,
-        test_loader           
-        ):
-    """
-    For Linear Regression and Multi-Layer Perceptron. Not KNN.
-    Contains train function, validate function, epoch loop over
-    both, train and validation loss plotting, test function, 
-    test data parity plot.
-    """
-    #-----------
-    def train():
-        """
-        Uses batches to minimize training loss.
-        ------- Params ------------------------
-        train_loader:
-            Training data subdivided into batches of prescribed size
-        optimizer:
-            Optimizer used to minimize training loss as a function 
-            of weights and biases
-        model:
-            Custom model (LR, MLP) for hidden layers and activations
-        loss_func:
-            Chosen metric to decide loss, e.g. mean squared error 
-        """
-        model.train()
-        loss_total = 0.0
-        N = 0.0
-        
-        for xb, yb in train_loader: # loop over batches
-            optimizer.zero_grad() # refreshing gradient-tracker
-            f = model(xb) # forward pass
-            loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
-            loss_batch.backward() # backward pass
-            optimizer.step() # updating weights and biases
-            #
-            loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
-            N += xb.size(0) # sum over number of samples in each batch
-        
-        return model, loss_total/N # model with updated params, avg loss
-    #-------------------------------------------------------------------
-
-
-    #--------------
-    def validate():
-        """
-        Runs validation data thru network using training parameters.
-        ------ Params ----------------------------------------------
-        valid_loader:
-            Validation data subdivided into batches of prescribed size
-        model:
-            Model with updated params from training run
-        loss_func:
-            Same loss function used in train()
-        """
-        model.eval()
-        loss_total = 0.0
-        N = 0.0
-
-        # Running with training weights and biases on validation data, without updating:
-        with torch.no_grad():
-            for xb, yb in valid_loader:
-                f = model(xb) # forward pass
-                loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
-                #
-                loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
-                N += xb.size(0) # sum over number of samples in each batch
-
-        return loss_total/N
-    #----------------------------------------------------------------------------------------
-
-
-    #---------------------------------------------------------------------------------------
-    # Looping over epochs, stopping either at training or validation threshold loss:
-    loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
-    N_epochs = int(0) # initializing epochs looped over
-
-    for epoch in range(epochs): 
-        model, loss_train = train() # 1 training update step
-        loss_valid = validate() # validation loss using updated train step params
-        loss_array[epoch, 0] = loss_train 
-        loss_array[epoch, 1] = loss_valid
-        #
-        N_epochs += 1 
-        #
-        avg_size = 10  # number of epochs to average over 
-        if epoch + 1 >= 2 * avg_size: # checking for stop condition only after 2 * avg_size
-            curr_avg = loss_array[epoch-avg_size+1: epoch+1, 1].mean()
-            prev_avg = loss_array[epoch-2*avg_size+1: epoch-avg_size+1, 1].mean()
-            #
-            if abs(curr_avg - prev_avg) <= delta_threshold:
-                break
-    #----------------
-
-
-    #---------------------------------------
-    # Plotting training and validation loss:
-    model_name = model.__class__.__name__
-    plt.figure()
-    plt.title(f'{model_name} Training & Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss Curves')
-    plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 0], s=4, label='Training Loss')
-    plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 1], s=4, label='Validation Loss')
-    plt.yscale('log')
-    plt.legend()
-    plt.savefig(f'./P1/{model_name}_loss.png')
-    #-----------------------------------------
-
-
-    #-------------------------------------------
-    def test():
-        model.eval()
-        loss_total, N = 0.0, 0
-        y_true, y_pred = [], []
-
-        with torch.no_grad():
-            for xb, yb in test_loader:
-                f = model(xb)
-                loss_total += loss_func(f, yb).item() * xb.size(0)
-                N += xb.size(0)
-                y_true.append(yb)
-                y_pred.append(f)
-
-        y_true = torch.cat(y_true).squeeze().numpy()
-        y_pred = torch.cat(y_pred).squeeze().numpy()
-        return loss_total/N, y_true, y_pred
-    #--------------------------------------
-
-
-    #-------------------------------------------------------
-    # Parity Plot (predicted test data vs true test labels):
-    loss_test, y_true, y_pred = test()
-    plt.figure()
-    plt.title(f'{model_name} Parity Plot')
-    plt.xlabel("Labels y")
-    plt.ylabel("Test Prediction ŷ")
-    plt.scatter(y_true, y_pred, s=6)
-    mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
-    plt.plot([mn, mx], [mn, mx])
-    plt.savefig(f'./P1/{model_name}_parity.png')
-    print(f'{model_name} final average test loss = {loss_test:.5g}')
-    #---------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------
 
 
@@ -313,7 +324,13 @@ def TVT(
 
 
 #------------------- LINEAR REGRESSION ---------------------------------------------------------------------------
-def linear_regression(epochs: int, delta_threshold: float, learning_rate: float, batch_fractions: list[float]):
+def linear_regression(
+        epochs: int, 
+        delta_threshold: float, 
+        learning_rate: float, 
+        batch_fractions: list[float],
+        plotting: bool
+    ):
     """
     Linear Regression ML Model.
     ------ Params -------------
@@ -325,6 +342,8 @@ def linear_regression(epochs: int, delta_threshold: float, learning_rate: float,
         scaling for dL/dw in optimization (w += learning_rate * dL/dw)
     batch_fraction: list[float]
         fraction of total data in each batch for [train, validate, test] data
+    plotting: bool
+        Plots train and validation loss, test parity plots
     """
 
     #-----------------------------
@@ -380,15 +399,16 @@ def linear_regression(epochs: int, delta_threshold: float, learning_rate: float,
 
     #-----------------------
     # Train, Validate, Test:
-    TVT(
+    return TVT(
         model = model,
-        optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
         loss_func = nn.MSELoss(),
         epochs = epochs,
         delta_threshold = delta_threshold,
         train_loader = train_loader,
         valid_loader = valid_loader,
-        test_loader = test_loader
+        test_loader = test_loader,
+        plotting = plotting
     )
     #----------------------------
 #----------------------------------------------------------------------------------------------------------------
@@ -409,6 +429,7 @@ def MLP(
     learning_rate: float, 
     batch_fractions: list[float],
     dim_hidden: list[int],
+    plotting: bool,
     seed: int | None = None,
     activation: nn.Module | None = None
     ):
@@ -425,6 +446,8 @@ def MLP(
         fraction of total data in each batch for [train, validate, test] data
     dim_hidden: list[int]
         number of nodes in each hidden layer
+    plotting: bool
+        Plots train and validation loss, test parity plots
     seed: int
         seed to shuffle the training data, initial weights and biases for problem 2.
     activation: PyTorch module
@@ -531,7 +554,7 @@ def MLP(
 
     #-----------------------
     # Train, Validate, Test:
-    TVT(
+    return TVT(
         model = model,
         optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate),
         loss_func = nn.MSELoss(),
@@ -539,7 +562,8 @@ def MLP(
         delta_threshold = delta_threshold,
         train_loader = train_loader,
         valid_loader = valid_loader,
-        test_loader = test_loader
+        test_loader = test_loader,
+        plotting = plotting
     )
     #----------------------------
 #----------------------------------------------------------------------------------------------------------------
@@ -554,27 +578,116 @@ def MLP(
 
 
 #------------------- FUNCTION CALLS  --------------------------------------------------------------------
-# Running linear regression ML:
-linear_regression(
-    epochs = 400,
-    delta_threshold = 1e-3,
-    learning_rate = 1e-4,
-    batch_fractions = [0.1, 0.1, 0.1]
-)
-    
-    
-# Running K-nearest-neighbors ML:
-KNN(k_range = np.arange(2,25,1))
+
+# K-Nearest-Neighbors run:
+#-------------------------
+#KNN(k_range = np.arange(2,25,1))
 
 
-# Running multi-layer perceptron ML:
-MLP(
-    epochs = 400,
-    delta_threshold = 1e-3,
-    learning_rate = 1e-4,
-    batch_fractions = [0.1, 0.1, 0.1],
-    dim_hidden = [128, 100, 64, 28],
-    seed = None,
-    activation = nn.ReLU
+
+
+# Linear Regression hyperparameter sweep:
+#-----------------------------------------
+loss_LR = [] # initializing test loss list
+
+epochs_options = [200, 400, 600, 800] 
+learning_rate_options = [1e-2, 1e-3, 1e-4] 
+batch_fraction_options = [
+    [0.25, 0.25, 0.25],
+    [0.50, 0.50, 0.50],
+    [1.00, 1.00, 1.00],
+]
+
+# Looping over all hyperparameter options:
+for epochs in epochs_options:
+    for learning_rate in learning_rate_options:
+        for batch_fractions in batch_fraction_options:
+            # Calling LR func:
+            loss_test = linear_regression( 
+                epochs=epochs,
+                delta_threshold=1e-4,
+                learning_rate=learning_rate,
+                batch_fractions=batch_fractions,
+                plotting=False
+            )
+            # Creating dictionary keys:
+            run = { 
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "batch_fractions": batch_fractions,
+                "test_loss": float(loss_test),
+            }
+            loss_LR.append(run) # appending list of dictionaries
+
+best_LR = min(loss_LR, key=lambda d: d["test_loss"])
+
+print("\nBest Linear Regression run (by test loss):")
+print(
+    f"test_loss = {best_LR['test_loss']:.5g}, "
+    f"epochs = {best_LR['epochs']}, "
+    f"learning_rate = {best_LR['learning_rate']:.1e}, "
+    f"batch_fractions = {best_LR['batch_fractions']}"
 )
-#-----------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------
+
+
+
+
+# Multi-Layer Perceptron hyperparameter sweep:
+#---------------------------------------------
+loss_MLP = []
+
+epochs_options = [200, 400, 600]
+learning_rate_options = [1e-3, 5e-4, 1e-4]
+batch_fraction_options = [
+    [0.25, 0.25, 0.25],
+    [0.50, 0.50, 0.50],
+    [1.00, 1.00, 1.00],
+]
+dim_hidden_options = [
+    [64],
+    [128, 64],
+    [128, 100, 64, 28],
+]
+
+# Looping over all hyperparameter options:
+for epochs in epochs_options:
+    for learning_rate in learning_rate_options:
+        for batch_fractions in batch_fraction_options:
+            for dim_hidden in dim_hidden_options:
+                # Calling MLP func:
+                loss_test = MLP(
+                    epochs=epochs,
+                    delta_threshold=1e-4,
+                    learning_rate=learning_rate,
+                    batch_fractions=batch_fractions,
+                    dim_hidden=dim_hidden,
+                    plotting=False,
+                    seed=None,
+                    activation=nn.LeakyReLU()
+                )
+                # Creating dictionary keys:
+                run = {
+                    "epochs": epochs,
+                    "learning_rate": learning_rate,
+                    "batch_fractions": batch_fractions,
+                    "dim_hidden": dim_hidden,
+                    "activation": "LeakyReLU",
+                    "seed": None,
+                    "test_loss": float(loss_test),
+                }
+                loss_MLP.append(run) # appending list of dictionaries
+
+best_MLP = min(loss_MLP, key=lambda d: d["test_loss"])
+
+print("\nBest MLP run (by test loss):")
+print(
+    f"test_loss = {best_MLP['test_loss']:.5g}, "
+    f"epochs = {best_MLP['epochs']}, "
+    f"learning_rate = {best_MLP['learning_rate']:.1e}, "
+    f"batch_fractions = {best_MLP['batch_fractions']}, "
+    f"dim_hidden = {best_MLP['dim_hidden']}, "
+    f"activation = {best_MLP['activation']}, "
+    f"seed = {best_MLP['seed']}"
+)
+#-------------------------------
