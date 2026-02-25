@@ -33,43 +33,32 @@ RGB = np.logical_and(RGB, labels['LOGG'] > 0.0)
 RGB = np.logical_and(RGB, labels['H'] < 10.5)
 RGB_labels = labels[RGB] # selects labels that meet criteria
 
-#-----------------------
-def data(rng_seed: int):
-    """
-    Data shuffler/mask/normalizer.
-    ------ Params ----------------
-    rng_seed: int
-        seed to shuffle the data for MLP HW part 2
-    ------ Returns -------------------------------
-    
-    """
-    # Making train, validation, and test data sets:
-    rng = np.random.default_rng(rng_seed) # arbitrary seed to shuffle indices of RGB dataset (DO NOT CHANGE)
-    N_RGB = len(RGB_labels) # number of labels that meet criteria
-    N_train, N_valid, N_test = 1024, 256, 512 # number of each type of data
-    I = rng.permutation(N_RGB) # shuffling post-criteria dataset
+# Making train, validation, and test data sets:
+rng = np.random.default_rng(17) # arbitrary seed to shuffle indices of RGB dataset (DO NOT CHANGE)
+N_RGB = len(RGB_labels) # number of labels that meet criteria
+N_train, N_valid, N_test = 1024, 256, 512 # number of each type of data
+I = rng.permutation(N_RGB) # shuffling post-criteria dataset
 
-    # Assigning the shuffled indices to each type of data:
-    I_train = I[0:N_train] 
-    I_valid = I[N_train:N_train+N_valid] 
-    I_test = I[N_train+N_valid:N_train+N_valid+N_test]
+# Assigning the shuffled indices to each type of data:
+I_train = I[0:N_train] 
+I_valid = I[N_train:N_train+N_valid] 
+I_test = I[N_train+N_valid:N_train+N_valid+N_test]
 
-    # Train, validate, test: 
-    train_labels = RGB_labels[I_train]
-    valid_labels = RGB_labels[I_valid]
-    test_labels = RGB_labels[I_test]
+# Train, validate, test: 
+train_labels = RGB_labels[I_train]
+valid_labels = RGB_labels[I_valid]
+test_labels = RGB_labels[I_test]
 
-    # Downloading features: 
-    train_features = np.load('./data/train_features.npy')
-    valid_features = np.load('./data/valid_features.npy')
-    test_features = np.load('./data/test_features.npy')
-
-    # Normalizing/standardizing features:
-    mu = train_features.mean(axis=0, keepdims=True)
-    sig = train_features.std(axis=0, keepdims=True) + 1e-8
-    train_features = (train_features - mu) / sig
-    valid_features = (valid_features - mu) / sig
-    test_features  = (test_features  - mu) / sig
+# Downloading features: 
+train_features = np.load('./data/train_features.npy')
+valid_features = np.load('./data/valid_features.npy')
+test_features = np.load('./data/test_features.npy')
+# Normalizing/standardizing features:
+mu = train_features.mean(axis=0, keepdims=True)
+sig = train_features.std(axis=0, keepdims=True) + 1e-8
+train_features = (train_features - mu) / sig
+valid_features = (valid_features - mu) / sig
+test_features  = (test_features  - mu) / sig
 #-----------------------------------------------------------------------------------------------------------------
 
 
@@ -148,41 +137,11 @@ def KNN(k_range: list[int]):
     mn, mx = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
     plt.plot([mn, mx], [mn, mx])
     plt.savefig("./P1/KNN_parity.png")
-    #---------------------------------
-
-    return k_opt, float(loss_valid[i_best]), float(loss_test)
+    print(f'KNN final average test loss = {loss_test:.5g},' \
+          'with optimal k value = {k_opt}')
+    #--------------------------------------
 #----------------------------------------------------------------------------------------------------------------
 
-
-
-
-
-
-
-
-
-
-#------------------- LR & MLP DATA PREP --------------------------------------------------------------------------
-# Data prep:
-x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
-y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
-y_train = torch.from_numpy(y_np).view(-1, 1)
-train_batch_size = int(N_train/4)
-train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True) 
-    
-x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
-y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
-y_valid = torch.from_numpy(y_np).view(-1, 1)
-valid_batch_size = int(N_valid/4)
-valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  
-    
-x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
-y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
-y_test = torch.from_numpy(y_np).view(-1, 1)
-test_batch_size = int(N_test/4)
-test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  
-#----------------------------------------------------------------------------------------------------------------
-  
 
 
 
@@ -279,20 +238,18 @@ def TVT(
     for epoch in range(epochs): 
         model, loss_train = train() # 1 training update step
         loss_valid = validate() # validation loss using updated train step params
-        #
         loss_array[epoch, 0] = loss_train 
         loss_array[epoch, 1] = loss_valid
-        # Stop condition based off validation loss to prevent overfitting:
-        avg_size = 10  # number of epochs to average over 
         #
+        N_epochs += 1 
+        #
+        avg_size = 10  # number of epochs to average over 
         if epoch + 1 >= 2 * avg_size: # checking for stop condition only after 2 * avg_size
             curr_avg = loss_array[epoch-avg_size+1: epoch+1, 1].mean()
             prev_avg = loss_array[epoch-2*avg_size+1: epoch-avg_size+1, 1].mean()
             #
             if abs(curr_avg - prev_avg) <= delta_threshold:
                 break
-    
-        N_epochs += 1
     #----------------
 
 
@@ -342,8 +299,8 @@ def TVT(
     mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
     plt.plot([mn, mx], [mn, mx])
     plt.savefig(f'./P1/{model_name}_parity.png')
-    print(f'{model_name} average test loss is {loss_test:.5}')
-    #---------------------------------------------------------
+    print(f'{model_name} final average test loss = {loss_test:.5g}')
+    #---------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------
 
 
@@ -375,9 +332,7 @@ def linear_regression(epochs: int, delta_threshold: float, learning_rate: float,
     if len(batch_fractions) != 3:
         raise ValueError('batch_fractions must contain train, validate, and test fractions')
     for frac in batch_fractions:
-        if frac < 0:
-            raise ValueError('Values in batch_fractions must be positive')
-        if np.abs(frac) > 1:
+        if frac <= 0 or frac > 1:
             raise ValueError('Values in batch_fractions must be between 0 and 1')
     #----------------------------------------------------------------------------
 
@@ -387,19 +342,19 @@ def linear_regression(epochs: int, delta_threshold: float, learning_rate: float,
     x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
-    train_batch_size = int(N_train * batch_fractions[0])
+    train_batch_size = max(1, int(N_train * batch_fractions[0]))
     train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True) 
         
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
-    valid_batch_size = int(N_valid * batch_fractions[1])
+    valid_batch_size = max(1, int(N_valid * batch_fractions[1]))
     valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  
         
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
-    test_batch_size = int(N_test * batch_fractions[2])
+    test_batch_size  = max(1, int(N_test  * batch_fractions[2]))
     test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  
     #-------------------------------------------------------------------------------------------------
     
@@ -454,6 +409,7 @@ def MLP(
     learning_rate: float, 
     batch_fractions: list[float],
     dim_hidden: list[int],
+    seed: int | None = None,
     activation: nn.Module | None = None
     ):
     """
@@ -469,33 +425,63 @@ def MLP(
         fraction of total data in each batch for [train, validate, test] data
     dim_hidden: list[int]
         number of nodes in each hidden layer
+    seed: int
+        seed to shuffle the training data, initial weights and biases for problem 2.
     activation: PyTorch module
         activation function to be used
     """
+
+    #-----------------------------
+    # Error conditions & defaults:
+    if len(batch_fractions) != 3:
+        raise ValueError('batch_fractions must contain train, validate, and test fractions')
+    for frac in batch_fractions:
+        if frac <= 0 or frac > 1:
+            raise ValueError('Values in batch_fractions must be between 0 and 1')
+    #----------------------------------------------------------------------------
+
+
     #-----------
     # Data prep:
     x_train = torch.tensor(train_features, dtype=torch.float32) # (N, d)
     y_np = np.array(train_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_train = torch.from_numpy(y_np).view(-1, 1)
-    train_batch_size = int(N_train * batch_fractions[0])
-    train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=train_batch_size, shuffle=True) 
+    train_batch_size = max(1, int(N_train * batch_fractions[0]))
+    g = None
+    if seed is not None:
+        torch.manual_seed(seed) # randomizer for initial weights and biases
+        g = torch.Generator() # shuffling training batches
+        g.manual_seed(seed)
+    train_loader = DataLoader(
+        TensorDataset(x_train, y_train), 
+        batch_size=train_batch_size, 
+        shuffle=True,
+        generator=g
+    ) 
         
     x_valid = torch.tensor(valid_features, dtype=torch.float32) # (N, d)
     y_np = np.array(valid_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_valid = torch.from_numpy(y_np).view(-1, 1)
-    valid_batch_size = int(N_valid * batch_fractions[1])
-    valid_loader = DataLoader(TensorDataset(x_valid, y_valid), batch_size=valid_batch_size, shuffle=False)  
+    valid_batch_size = max(1, int(N_valid * batch_fractions[1]))
+    valid_loader = DataLoader(
+        TensorDataset(x_valid, y_valid), 
+        batch_size=valid_batch_size, 
+        shuffle=False
+    )  
         
     x_test = torch.tensor(test_features, dtype=torch.float32) # (N, d)
     y_np = np.array(test_labels["LOGG"], dtype=np.float32)  # forces native float32
     y_test = torch.from_numpy(y_np).view(-1, 1)
-    test_batch_size = int(N_test * batch_fractions[2])
-    test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=test_batch_size, shuffle=False)  
-    #-------------------------------------------------------------------------------------------------
-
+    test_batch_size  = max(1, int(N_test  * batch_fractions[2]))
+    test_loader = DataLoader(
+        TensorDataset(x_test, y_test), 
+        batch_size=test_batch_size, 
+        shuffle=False
+    )  
+    #----------------
     
-    #----------------------
-    # Generating MLP class:
+
+    #-------------------------------------
     class MultiLayerPerceptron(nn.Module):
         #
         def __init__(self, dims:list[int], activation: nn.Module | None = None):
@@ -537,9 +523,9 @@ def MLP(
     #-----------------
     # Regression Prep:
     dim_input = x_train.shape[1] # feature dimension = dimension of input layer
-    dim_hidden = dim_hidden
     dim_output = 1 # label dimension = dimension of output layer
-    model = MultiLayerPerceptron([dim_input, dim_hidden, dim_output], activation=activation)
+    dims = [dim_input] + dim_hidden + [dim_output]
+    model = MultiLayerPerceptron(dims, activation=activation)
     #-----------------------------------------------------------------------------------
 
 
@@ -567,14 +553,28 @@ def MLP(
 
 
 
-#------------------- LR & MLP FUNCTION CALLS  --------------------------------------------------------------------
+#------------------- FUNCTION CALLS  --------------------------------------------------------------------
 # Running linear regression ML:
-#linear_regression(400, 1e-3, 1e-4)
+linear_regression(
+    epochs = 400,
+    delta_threshold = 1e-3,
+    learning_rate = 1e-4,
+    batch_fractions = [0.1, 0.1, 0.1]
+)
+    
     
 # Running K-nearest-neighbors ML:
-#knn_results = KNN(np.arange(2,25,1)) # storing k_opt (from training) and validation loss
-#print(f'KNN optimal k = {knn_results[0]}, validation loss = {knn_results[1]:.5g}')
-  
+KNN(k_range = np.arange(2,25,1))
+
+
 # Running multi-layer perceptron ML:
-#MLP(400, 128, 1e-4)
+MLP(
+    epochs = 400,
+    delta_threshold = 1e-3,
+    learning_rate = 1e-4,
+    batch_fractions = [0.1, 0.1, 0.1],
+    dim_hidden = [128, 100, 64, 28],
+    seed = None,
+    activation = nn.ReLU
+)
 #-----------------------------------------------------------------------------------------------------------------
