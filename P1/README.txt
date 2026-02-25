@@ -22,7 +22,9 @@ USER CALLS: Deciding on single runs or hyperparameter sweeps. @Professor @TA, th
 
 
 2. 
-    1. Done.
+    1. Done. Manipulation of the weights and biases initalization in MLP using the seed
+       input resulted in small fluctuations about the tuned hyperparameter test loss 
+       values, about +/- 0.02.
 
     2. As discussed in class, minimization of the training loss doesn't correlate with 
        minimization of the validation loss, therefore, all three methods (KNN, LR, MLP)
@@ -42,7 +44,7 @@ USER CALLS: Deciding on single runs or hyperparameter sweeps. @Professor @TA, th
        seemed to have the largest influence of all the hyperparameters, with epoch varying 
        between hypersweeps, and dim_hidden consistently being best when the first hidden layer
        dimension was around 128. Also, interestingly, the double descent curve can be seen in 
-       the LinearRegression_loss.png plot.
+       the LinearRegression_loss.png plot. 
 
 
 Citation: ChatGPT 5.2 was used for general discussions in understanding conceptually the 
