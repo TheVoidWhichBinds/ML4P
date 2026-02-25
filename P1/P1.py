@@ -626,7 +626,8 @@ def MLP_hypersweep(
         epochs_options: list[int],
         learning_rate_options: list[float],
         batch_fractions_options: list[list[float]],
-        dim_hidden_options: list[list[int]]
+        dim_hidden_options: list[list[int]],
+        activation: nn.Module
     ):
     """
     Runs MLP for combination of hyperparameters: epochs, 
@@ -648,7 +649,7 @@ def MLP_hypersweep(
                         dim_hidden=dim_hidden,
                         plotting=False,
                         seed=None,
-                        activation=nn.LeakyReLU()
+                        activation=activation
                     )
                     # Creating dictionary keys:
                     run = {
@@ -656,7 +657,7 @@ def MLP_hypersweep(
                         "learning_rate": learning_rate,
                         "batch_fractions": batch_fractions,
                         "dim_hidden": dim_hidden,
-                        "activation": "LeakyReLU",
+                        "activation": "activation",
                         "seed": None,
                         "test_loss": float(loss_test),
                     }
@@ -747,10 +748,12 @@ def MLP_single(
 
 
 
+
+
 #------------------- USER CALLS  -----------------------------------------------------------------------------------------
 # Grandmaster control for if single runs (tuned hyperparams, plotting) = True
 # or hyperparameter sweep (hyperparam options, NO plotting) = False:
-single = False 
+single = True
 
 # Single Runs:
 #-----------------
@@ -760,20 +763,20 @@ if single == True:
     LR_single(
         epochs = 800,
         delta_threshold = 1e-4,
-        learning_rate = 1e-3,
+        learning_rate = 2e-3,
         batch_fractions = [0.25,0.25,0.25],
         plotting = True
     )
 
     MLP_single(
-        epochs = 800,
+        epochs = 500,
         delta_threshold = 1e-4,
-        learning_rate = 1e-3,
-        batch_fractions = [0.25,0.25,0.25],
-        dim_hidden = [128,64,28],
+        learning_rate = 5.2e-4,
+        batch_fractions = [0.1,0.1,0.1],
+        dim_hidden = [128,100,64,28],
         plotting = True,
         seed = None,
-        activation = nn.ReLU
+        activation = nn.LeakyReLU()
     )
 #-----------------------------
 
@@ -784,22 +787,23 @@ else:
     KNN_run()
 
     LR_hypersweep(
-        epochs_options = [700, 800, 900, 1000], 
-        learning_rate_options = [10e-4, 1e-3, 2e-3, 3e-3, 4e-3],
-        batch_fraction_options = [[0.25, 0.25, 0.25],
-                                  [0.3, 0.3, 0.3],
-                                  [0.2, 0.2, 0.2]]
+        epochs_options = [800, 900, 1000], 
+        learning_rate_options = [1e-3, 2e-3, 3e-3],
+        batch_fractions_options = [[0.25, 0.25, 0.25],
+                                   [0.2, 0.2, 0.2],
+                                   [0.1, 0.1, 0.1]]
     )
 
     MLP_hypersweep(
-        epochs_options = [500, 600, 700, 800],
-        learning_rate_options = [3e-4, 4e-4, 5e-4, 6e-4, 7e-4],
-        batch_fraction_options = [[0.2, 0.2, 0.2],
-                                  [0.25, 0.25, 0.25],
-                                  [0.3, 0.3, 0.3]],
-        dim_hidden_options = [[500, 200, 100, 50],
-                              [500, 200, 100],
-                              [128, 100, 64, 28]]
+        epochs_options = [500, 600],
+        learning_rate_options = [4.8e-4, 5e-4, 5.2e-4],
+        batch_fractions_options = [[0.25, 0.25, 0.25],
+                                   [0.2, 0.2, 0.2],
+                                   [0.1, 0.1, 0.1]],
+        dim_hidden_options = [[100, 150, 75],
+                              [100, 150, 100, 50],
+                              [128, 100, 64, 28]],
+        activation = nn.ReLU()
     )
 #------------------------------------------------
 #-------------------------------------------------------------------------------------------------------------------------
