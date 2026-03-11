@@ -8,9 +8,10 @@ import torch.nn as nn
 
 
 
-
-def TVT(            
-        model,                    
+#------------------------ TEST, VALIDATE, TRAIN FUNCTION ------------------------------------------------------------------------------
+def train_validate_test(            
+        model,
+        model_name,                    
         optimizer,                
         loss_func: nn.Module,                
         epochs: int,                   
@@ -143,7 +144,6 @@ def TVT(
     #---------------------------------------
     if plotting == True:
         # Plotting training and validation loss:
-        model_name = model.__class__.__name__
         plt.figure()
         plt.title(f'{model_name} Training & Validation Loss')
         plt.xlabel('Epoch')
@@ -159,12 +159,12 @@ def TVT(
         plt.title(f'{model_name} Parity Plot')
         plt.xlabel("Labels y")
         plt.ylabel("Test Prediction ŷ")
-        plt.scatter(y_true, y_pred, s=6)
+        plt.scatter(y_true, y_pred, s=2, alpha=0.15)
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
-        plt.plot([mn, mx], [mn, mx])
+        plt.plot([mn, mx], [mn, mx], color='black')
         plt.savefig(f'./PS2/{model_name}_parity.png')
         #-------------------------------------------
     
 
     return float(loss_test)
-#----------------------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------------------------

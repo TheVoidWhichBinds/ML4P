@@ -711,7 +711,7 @@ def LR_single(
                     batch_fractions=batch_fractions,
                     plotting=plotting
                 )
-    return(print(f'LR averaged test loss = {loss_test:.5g}'))
+    return(print(f'LR averaged test loss = {loss_test:.5e}'))
 #------------------------------------------------------------
 
 
@@ -737,7 +737,7 @@ def MLP_single(
                     seed=seed,
                     activation=activation
                 )
-    return(print(f'MLP averaged test loss = {loss_test:.5g}'))
+    return(print(f'MLP averaged test loss = {loss_test:.5e}'))
 #-------------------------------------------------------------
 #-------------------------------------------------------------------------------------------------------------------------
 
