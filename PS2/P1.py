@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 from collections.abc import Callable
-from TVT import train_validate_test
+from TVT import TVT_MLP
 
 
 
@@ -167,7 +167,7 @@ def h_theta(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
     #----------------
 
 
-    return train_validate_test(
+    return TVT_MLP(
         model = model,
         model_name = model_name,
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
