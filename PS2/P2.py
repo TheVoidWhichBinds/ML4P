@@ -1,9 +1,42 @@
-import numpy as np
-import torch
-from torch.utils.data import TensorDataset, DataLoader
+from pathlib import Path
+from the_well.data import WellDataset
+from the_well.utils.download import well_download
+from torch.utils.data import DataLoader
 import torch.nn as nn
-from collections.abc import Callable
-from TVT import TVT_CNN
+import torch
+
+
+
+
+
+#--------- DATA INITIALIZATION ----------------------------------------------------------------------------------------------
+#------------------
+# Downloading data:
+base_path = str(Path("./datasets"))
+dataset_name = "MHD_64"
+for split in ["train", "valid", "test"]:
+    split_dir = base_path / dataset_name / "data" / split
+    if not split_dir.exists():
+        well_download(
+            base_path = base_path, 
+            dataset = dataset_name, 
+            split = split)
+#-------------------------
+
+#----------------------------------------
+# Splitting data into train, valid, test:
+datasets = {} # initializing dictionary
+for split in ["train", "valid", "test"]:
+    datasets[split] = WellDataset( # generating key-value pairs
+        well_base_path = str(base_path),
+        well_dataset_name = dataset_name,
+        well_split_name = split,
+        n_steps_input = 4,
+        n_steps_output = 1,
+        use_normalization = False,
+    )
+#---------------------------------
+#----------------------------------------------------------------------------------------------------------------------------
 
 
 
@@ -13,47 +46,64 @@ from TVT import TVT_CNN
 
 
 
-#------------------- CNN -------------------------------------------------------------------------------------------------------------
+
+#--------- DATA AUGMENTATION ------------------------------------------------------------------------------------------------
+#---------------
+# Original data:
+train_orig = datasets["train"]
+valid_orig = datasets["valid"]
+test_orig = datasets["test"]
+#---------------------------
+
+
+#--------------
+# Rotated data:
+
+
+
+#---------------------------
+
+
+#--------------
+# B -> -B data:
+
+
+
+#----------------------------
+#----------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+#------------------- CNN ----------------------------------------------------------------------------------------------------
 def MHD(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
     """
-    Generic MLP-style NN.
-    func = preprocessing map applied once to input.
-    Use func(x)=x for baseline, func(x)=x**2 for Z2-even model.
+    CNN that emulates plasma MHD equations with the assistance of 
+    augmented data enforcing translation, rotation, and B-field parity.
     """
-    #----------------------------
-    # Catching errors:
-    if len(batch_fractions) != 3:
-        raise ValueError("batch_fractions must contain train, validate, and test fractions")
-    for frac in batch_fractions:
-        if frac <= 0 or frac > 1:
-            raise ValueError("Values in batch_fractions must be between 0 and 1")
-
-    # Generating seed for training data shuffling:
-    torch.manual_seed(seed)
-    g = torch.Generator()
-    g.manual_seed(seed)
-    #------------------
-
 
     #--------------------
-    class MLP(nn.Module):
+    class CNN(nn.Module):
         def __init__(
             self,
             dims: list[int],
-            preprocess: Callable[[torch.Tensor], torch.Tensor],
             activation: nn.Module | None = None
         ):
             super().__init__()
             if activation is None:
                 activation = nn.ReLU()
-            self.preprocess = preprocess
             self.act = activation
             self.layers = nn.ModuleList(
                 [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
             )
 
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            x = self.preprocess(x)  
+        def forward(self, x: torch.Tensor) -> torch.Tensor: 
             for layer in self.layers[:-1]:
                 x = self.act(layer(x))
             x = self.layers[-1](x)
@@ -62,35 +112,14 @@ def MHD(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
 
 
     #---------------------------
-    dim_input = x_train.shape[1]
-    dim_output = y_train.shape[1]
-    dims = [dim_input] + dim_hidden + [dim_output]
-    model = MLP(dims=dims, preprocess=func, activation=activation)
+    dims = 
+    model = 
     model_name = func.__name__
-    #-------------------------
-
-    #-----------------------------------------------------------
-    train_batch_size = max(1, int(N_train * batch_fractions[0]))
-    valid_batch_size = max(1, int(N_valid * batch_fractions[1]))
-    test_batch_size  = max(1, int(N_test  * batch_fractions[2]))
-
-    train_loader = DataLoader(
-        TensorDataset(x_train, y_train),
-        batch_size=train_batch_size,
-        shuffle=True,
-        generator=g
-    )
-    valid_loader = DataLoader(
-        TensorDataset(x_valid, y_valid),
-        batch_size=valid_batch_size,
-        shuffle=False
-    )
-    test_loader = DataLoader(
-        TensorDataset(x_test, y_test),
-        batch_size=test_batch_size,
-        shuffle=False
-    )
-    #----------------
+    
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+    valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+    #------------------------------------------------------------------
 
 
     return TVT_CNN(

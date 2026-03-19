@@ -48,3 +48,8 @@ RUNNING IT: baseline: standard MLP. Z2: Z2-enforcing function. Also
         augmented data, while the translational symmetry are enforced 
         by the neural network being a CNN.
 (b)
+
+
+
+LLM Usage:
+    
