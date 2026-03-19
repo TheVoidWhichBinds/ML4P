@@ -4,6 +4,31 @@ from the_well.utils.download import well_download
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch
+from TVT import TVT_CNN
+from torch.utils.data import ConcatDataset
+
+
+
+
+
+
+
+
+
+#------------------- HYPERPARAMETERS ---------------------------------------------------------------------------------------
+epochs = 100
+delta_threshold = 1e-4
+learning_rate = 1e-3
+batch_fractions = [0.25, 0.25, 0.25] # Fraction of total train, validate, and testing (respectively) data per batch
+dim_hidden = [128, 64, 28] # nodes in each hidden layer # DELETE???
+activation = nn.LeakyReLU() 
+loss_func = nn.MSELoss()
+#---------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
 
 
 
@@ -12,15 +37,20 @@ import torch
 #--------- DATA INITIALIZATION ----------------------------------------------------------------------------------------------
 #------------------
 # Downloading data:
-base_path = str(Path("./datasets"))
+base_path = Path("./")
 dataset_name = "MHD_64"
+
+print("cwd:", Path.cwd())
+print("base_path:", base_path.resolve())
+
 for split in ["train", "valid", "test"]:
     split_dir = base_path / dataset_name / "data" / split
     if not split_dir.exists():
         well_download(
-            base_path = base_path, 
-            dataset = dataset_name, 
-            split = split)
+            base_path=str(base_path),
+            dataset=dataset_name,
+            split=split,
+        )
 #-------------------------
 
 #----------------------------------------
@@ -55,21 +85,28 @@ valid_orig = datasets["valid"]
 test_orig = datasets["test"]
 #---------------------------
 
-
+print(train_orig.metadata.field_names)
 #--------------
 # Rotated data:
-
-
-
+train_rot = datasets["train"]
+valid_rot = datasets["valid"]
+test_rot = datasets["test"]
 #---------------------------
-
 
 #--------------
 # B -> -B data:
-
-
-
+train_B = datasets["train"]
+valid_B = datasets["valid"]
+test_B = datasets["test"]
 #----------------------------
+
+
+#--------------------
+# Combining datasets:
+train_aug = ConcatDataset([train_orig, train_rot, train_B])
+valid_aug = ConcatDataset([valid_orig, valid_rot, valid_B])
+test_aug  = ConcatDataset([test_orig, test_rot, test_B])
+#-------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------
 
 
@@ -82,7 +119,7 @@ test_orig = datasets["test"]
 
 
 #------------------- CNN ----------------------------------------------------------------------------------------------------
-def MHD(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
+def MHD( plotting: bool):
     """
     CNN that emulates plasma MHD equations with the assistance of 
     augmented data enforcing translation, rotation, and B-field parity.
@@ -112,26 +149,24 @@ def MHD(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
 
 
     #---------------------------
-    dims = 
-    model = 
-    model_name = func.__name__
+    # dims = 
+    model = CNN(activation=activation)
+
     
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+   
     #------------------------------------------------------------------
 
 
     return TVT_CNN(
-        model = model,
-        model_name = model_name,
+        model = CNN,
+        model_name = model.__name__,
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
-        loss_func = nn.MSELoss(),
+        loss_func = loss_func,
         epochs = epochs,
         delta_threshold = delta_threshold,
-        train_loader = train_loader,
-        valid_loader = valid_loader,
-        test_loader = test_loader,
+        train_loader = DataLoader(train_aug, batch_size=8, shuffle=True),
+        valid_loader = DataLoader(valid_aug, batch_size=8, shuffle=False),
+        test_loader = DataLoader(test_aug, batch_size=8, shuffle=False),
         plotting = plotting
     )
 #-------------------------------------------------------------------------------------------------------------------------------------
@@ -145,6 +180,6 @@ def MHD(func: Callable[[torch.Tensor], torch.Tensor], plotting: bool):
 
 
 
-#------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
+# #------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------------------------------------------------------------
+# #-------------------------------------------------------------------------------------------------------------------------------------
