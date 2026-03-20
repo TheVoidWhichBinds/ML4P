@@ -197,11 +197,10 @@ def TVT_CNN(
         plotting: bool           
         ):
     """
-    For CNNs
-    Contains train function, validate function, epoch loop over
-    both, train and validation loss plotting, test function, 
-    test data parity plot.
-    ------- Params ------------------------
+    For CNNs applied to problem 2
+    Contains train function, validate function, epoch loop for both,
+    and test function
+    ------- Params ------------------------------------------------
         model:
             Custom model for hidden layers and activations
         optimizer:

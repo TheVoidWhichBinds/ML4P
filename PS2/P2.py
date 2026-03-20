@@ -37,7 +37,7 @@ loss_func = nn.MSELoss()
 #--------- DATA INITIALIZATION ----------------------------------------------------------------------------------------------
 #------------------
 # Downloading data:
-base_path = Path("./")
+base_path = Path("./datasets")
 dataset_name = "MHD_64"
 
 print("cwd:", Path.cwd())
@@ -77,31 +77,69 @@ for split in ["train", "valid", "test"]:
 
 
 
+
+
+
+
+
+
+
+
+
 #--------- DATA AUGMENTATION ------------------------------------------------------------------------------------------------
+
+#-----------------------------------
+class Augmentation(Dataset):
+    def __init__(self, base_dataset, transform=None):
+        self.base_dataset = base_dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        sample = self.base_dataset[idx]
+
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample
+#--------------------
+
+
+#-----------------------
+def rotation(X:):
+    X
+#------------------------
+
+
+#-------------------
+def b_parity(X:):
+    X
+#----------------------------
+
+
+
+
+
+
+
 #---------------
 # Original data:
 train_orig = datasets["train"]
 valid_orig = datasets["valid"]
 test_orig = datasets["test"]
-#---------------------------
 
-print(train_orig.metadata.field_names)
-#--------------
 # Rotated data:
-train_rot = datasets["train"]
+train_rot = Augmentation(base_dataset=train_orig, transform=)
 valid_rot = datasets["valid"]
 test_rot = datasets["test"]
-#---------------------------
 
-#--------------
 # B -> -B data:
 train_B = datasets["train"]
 valid_B = datasets["valid"]
 test_B = datasets["test"]
-#----------------------------
 
-
-#--------------------
 # Combining datasets:
 train_aug = ConcatDataset([train_orig, train_rot, train_B])
 valid_aug = ConcatDataset([valid_orig, valid_rot, valid_B])
@@ -118,68 +156,83 @@ test_aug  = ConcatDataset([test_orig, test_rot, test_B])
 
 
 
-#------------------- CNN ----------------------------------------------------------------------------------------------------
-def MHD( plotting: bool):
-    """
-    CNN that emulates plasma MHD equations with the assistance of 
-    augmented data enforcing translation, rotation, and B-field parity.
-    """
+#------------------- Spatial CNN ---------------------------------------------------------------------------------------------
+# def MHD(
+#         kernel_size,
+#         activation,
+#         plotting: bool,
+    
+    
+    
+#     ):
+#     """
+#     CNN that emulates plasma MHD equations with the assistance of 
+#     augmented data enforcing translation, rotation, and B-field parity.
+#     """
 
-    #--------------------
-    class CNN(nn.Module):
-        def __init__(
-            self,
-            dims: list[int],
-            activation: nn.Module | None = None
-        ):
-            super().__init__()
-            if activation is None:
-                activation = nn.ReLU()
-            self.act = activation
-            self.layers = nn.ModuleList(
-                [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
-            )
+#     #--------------------
+#     class spatial_CNN(nn.Module):
+#         def __init__(
+#             self,
+#             dims: list[int],
+#             activation: nn.Module | None = None
+#         ):
+#             super().__init__()
+#             if activation is None:
+#                 activation = nn.ReLU()
+#             self.act = activation
+#             self.layers = nn.ModuleList(
+#                 [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
+#             )
 
-        def forward(self, x: torch.Tensor) -> torch.Tensor: 
-            for layer in self.layers[:-1]:
-                x = self.act(layer(x))
-            x = self.layers[-1](x)
-            return x
-    #---------------
+#         def forward(self, X: torch.Tensor) -> torch.Tensor: 
+#             X = nn.Conv3d(
+#                 in_channels = 7 * ,
+#                 out_channels = 7,
+#                 kernel_size = kernel_size,
+#                 stride = 1
+#             )
+#             X = self.act(X)
+#             X = nn.Conv3d(
+#                 in_channels = 7 *,
+#                 out_channels = 7,
+#                 kernel_size = kernel_size,
+#                 stride = 1
+#             )
+#             return X
+#     #---------------------
 
 
-    #---------------------------
-    # dims = 
-    model = CNN(activation=activation)
+
 
     
    
-    #------------------------------------------------------------------
+#     #------------------------------------------------------------------
 
 
-    return TVT_CNN(
-        model = CNN,
-        model_name = model.__name__,
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
-        loss_func = loss_func,
-        epochs = epochs,
-        delta_threshold = delta_threshold,
-        train_loader = DataLoader(train_aug, batch_size=8, shuffle=True),
-        valid_loader = DataLoader(valid_aug, batch_size=8, shuffle=False),
-        test_loader = DataLoader(test_aug, batch_size=8, shuffle=False),
-        plotting = plotting
-    )
-#-------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-# #------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
-
+#     return TVT_CNN(
+#         model = MHD(activation=activation),
+#         model_name = MHD.__name__(),
+#         optimizer = torch.optim.Adam(MHD.parameters(), lr=learning_rate),
+#         loss_func = loss_func,
+#         epochs = epochs,
+#         delta_threshold = delta_threshold,
+#         train_loader = DataLoader(train_aug, batch_size=8, shuffle=True),
+#         valid_loader = DataLoader(valid_aug, batch_size=8, shuffle=False),
+#         test_loader = DataLoader(test_aug, batch_size=8, shuffle=False),
+#         plotting = plotting
+#     )
 # #-------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+# # #------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
+
+# # #-------------------------------------------------------------------------------------------------------------------------------------
