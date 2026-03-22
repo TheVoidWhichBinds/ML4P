@@ -64,7 +64,7 @@ for split in ['train', 'valid', 'test']:
         well_base_path = str(base_path),
         well_dataset_name = dataset_name,
         well_split_name = split,
-        n_steps_input = 4,
+        n_steps_input = 4, 
         n_steps_output = 1,
         use_normalization = False,
     )
@@ -74,7 +74,7 @@ for split in ['train', 'valid', 'test']:
 #----------------------------------
 # Data augmentation:
 train_orig = datasets['train']
-train_B = Augmentation(train_orig, transform=b_parity)
+train_mag = Augmentation(train_orig, transform=b_parity)
 train_z90 = Augmentation(
     train_orig,
     transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
@@ -84,6 +84,12 @@ train_x90 = Augmentation(
     transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
 )
 
+# Combining augmentations:
+train_aug = ConcatDataset([train_orig, train_mag, train_z90, train_x90])
+
+# Validation and test data:
+valid = datasets['valid']
+test = datasets['test']
 #----------------------------------------------------------------------------------------------------------------------------
 
 
@@ -95,91 +101,73 @@ train_x90 = Augmentation(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #------------------- Spatial CNN ---------------------------------------------------------------------------------------------
-# def MHD(
-#         kernel_size,
-#         activation,
-#         plotting: bool,
+def MHD(
+        kernel_size,
+        activation,
+        plotting: bool,
     
     
     
-#     ):
-#     """
-#     CNN that emulates plasma MHD equations with the assistance of 
-#     augmented data enforcing translation, rotation, and B-field parity.
-#     """
+    ):
+    """
+    CNN that emulates plasma MHD equations with the assistance of 
+    augmented data enforcing translation, rotation, and B-field parity.
+    """
 
-#     #--------------------
-#     class spatial_CNN(nn.Module):
-#         def __init__(
-#             self,
-#             dims: list[int],
-#             activation: nn.Module | None = None
-#         ):
-#             super().__init__()
-#             if activation is None:
-#                 activation = nn.ReLU()
-#             self.act = activation
-#             self.layers = nn.ModuleList(
-#                 [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
-#             )
+    #--------------------
+    class spatial_CNN(nn.Module):
+        def __init__(
+            self,
+            dims: list[int],
+            activation: nn.Module | None = None
+        ):
+            super().__init__()
+            if activation is None:
+                activation = nn.ReLU()
+            self.act = activation
+            self.layers = nn.ModuleList(
+                [nn.Linear(dims[i], dims[i + 1]) for i in range(len(dims) - 1)]
+            )
 
-#         def forward(self, X: torch.Tensor) -> torch.Tensor: 
-#             X = nn.Conv3d(
-#                 in_channels = 7 * ,
-#                 out_channels = 7,
-#                 kernel_size = kernel_size,
-#                 stride = 1
-#             )
-#             X = self.act(X)
-#             X = nn.Conv3d(
-#                 in_channels = 7 *,
-#                 out_channels = 7,
-#                 kernel_size = kernel_size,
-#                 stride = 1
-#             )
-#             return X
-#     #---------------------
+        def forward(self, X: torch.Tensor) -> torch.Tensor: 
+            X = nn.Conv3d(
+                in_channels = 7 * ,
+                out_channels = 7,
+                kernel_size = kernel_size,
+                stride = 1
+            )
+            X = self.act(X)
+            X = nn.Conv3d(
+                in_channels = 7 *,
+                out_channels = 7,
+                kernel_size = kernel_size,
+                stride = 1
+            )
+            return X
+    #---------------------
 
 
 
 
     
    
-#     #------------------------------------------------------------------
+    #------------------------------------------------------------------
 
 
-#     return TVT_CNN(
-#         model = MHD(activation=activation),
-#         model_name = MHD.__name__(),
-#         optimizer = torch.optim.Adam(MHD.parameters(), lr=learning_rate),
-#         loss_func = loss_func,
-#         epochs = epochs,
-#         delta_threshold = delta_threshold,
-#         train_loader = DataLoader(train_aug, batch_size=8, shuffle=True),
-#         valid_loader = DataLoader(valid_aug, batch_size=8, shuffle=False),
-#         test_loader = DataLoader(test_aug, batch_size=8, shuffle=False),
-#         plotting = plotting
-#     )
-# #-------------------------------------------------------------------------------------------------------------------------------------
+    return TVT_CNN(
+        model = MHD(activation=activation),
+        model_name = MHD.__name__(),
+        optimizer = torch.optim.Adam(MHD.parameters(), lr=learning_rate),
+        loss_func = loss_func,
+        epochs = epochs,
+        delta_threshold = delta_threshold,
+        train_loader = DataLoader(train_aug, batch_size=8, shuffle=True),
+        valid_loader = DataLoader(valid_aug, batch_size=8, shuffle=False),
+        test_loader = DataLoader(test_aug, batch_size=8, shuffle=False),
+        plotting = plotting
+    )
+#-------------------------------------------------------------------------------------------------------------------------------------
 
 
 
