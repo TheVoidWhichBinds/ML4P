@@ -31,14 +31,28 @@ TVT_MLP (TVT.py):
 
 #------------------------------ P2.py --------------------------------#
                                Sections
-DATA INITIALIZATION:
-MODEL CLASS AND FORWARD FUNCTION:
-HYPERPARAMETERS AND RUNNING IT:
-AUGMENTATION (augment.py):
-TVT_MHD (TVT.py):
+DATA INITIALIZATION: Data download, number of time-steps per sample, 
+    data augmentation (See Part 1, (b)) with subset of data (shit was
+    too damn big. Run it on a supercomputer if you want).
+MODEL CLASS AND FORWARD FUNCTION: Model was a spatial 3-D CNN then a 
+    temporal 1-D CNN, with activations after each layer. Tensors had 
+    to be modified to be compatible with Conv3d and Conv1d. 
+HYPERPARAMETERS AND RUNNING IT: Calling the model, hyperparameters,
+    and running train, validate, test function.
+AUGMENTATION (augment.py): augmentation functions: B-field parity,
+    and rotation function that can rotate 90, 180 or 270 degrees about 
+    the axis of choice.
+TVT_MHD (TVT.py): Train, validate, test function, same as TVT_MLP but 
+    slightly modified to take in train_aug, valid_orig, test_orig 
+    (Dataset objects) and extract their "input_fields" and "output_fields"
+    tensors.
 
                                 Part 1
-(a) Dataset = MHD_64 - DESCRIPTION
+(a) Dataset = MHD_64 - A 64x64x64 spatial grid of plasma with periodic
+    boundary conditions that obeys 3 equations of ideal MHD: 
+    mass continuity, momentum conservation, and the induction equation.
+    The density rho, 3-D vector fields of velocity and magnetic field
+    are known at each spatial grid, at HOW MANY time stamps.
 (b) The symmetries I am enforcing are: 
     Rotational symmetry - the MHD system of equations are equivariant 
         under the rotational symmetry (rho, P, v, B) -> (rho, P, Rv, RB).

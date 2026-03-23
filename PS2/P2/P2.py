@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch
 from TVT import TVT_MHD
 from torch.utils.data import Dataset, ConcatDataset, Subset
-from augment import Augmentation, b_parity, rotation_symmetry
+from .augment import Augmentation, b_parity, rotation_symmetry
 
 # Try group averaging before augmentation and then group averaging
 # plus augmentation 
@@ -21,7 +21,7 @@ from augment import Augmentation, b_parity, rotation_symmetry
 #============= DATA INITIALIZATION ============================================================================================
 #------------------
 # Downloading data:
-project_dir = Path(__file__).resolve().parent
+project_dir = Path(__file__).resolve().parent.parent
 base_path = project_dir / "datasets"
 dataset_name = "MHD_64"
 
@@ -55,7 +55,7 @@ for split in ['train', 'valid', 'test']:
 # Data augmentation:
 train_orig = datasets['train']
 N_train = len(train_orig)
-train_subset = N_train // 1000
+train_subset = N_train // 100
 train_orig = Subset(train_orig, range(train_subset))
 train_mag = Augmentation(train_orig, transform=b_parity)
 # train_z90 = Augmentation(
@@ -73,12 +73,12 @@ train_aug = ConcatDataset([train_orig, train_mag])
 # Validation and test data:
 valid_orig = datasets['valid']
 N_valid = len(valid_orig)
-valid_subset = N_valid // 100
+valid_subset = N_valid // 10
 valid_orig = Subset(valid_orig, range(train_subset))
 
 test_orig = datasets['test']
 N_test = len(test_orig)
-test_subset = N_test // 100
+test_subset = N_test // 10
 test_orig = Subset(test_orig, range(test_subset))
 
 print('Data augmentation complete ...')
@@ -298,7 +298,7 @@ def MHD(
 
     return TVT_MHD(
         model = model,
-        model_name = 'Augmented CNN',
+        model_name = 'Aug_CNN',
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
         loss_func = loss_func,
         epochs = epochs,

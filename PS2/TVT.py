@@ -339,7 +339,7 @@ def TVT_MHD(
         plt.scatter(np.arange(1, N_epochs + 1), loss_array[:N_epochs, 1], s=4, label='Validation Loss')
         plt.yscale('log')
         plt.legend()
-        plt.savefig(f'./PS2/{model_name}_loss.png')
+        plt.savefig(base_path / f'{model_name}_loss.png')
       
         # Parity Plot (predicted test data vs true test labels):
         plt.figure()
@@ -349,7 +349,7 @@ def TVT_MHD(
         plt.scatter(y_true, y_pred, s=2, alpha=0.15)
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
         plt.plot([mn, mx], [mn, mx], color='black')
-        plt.savefig(f'./PS2/{model_name}_parity.png')
+        plt.savefig(base_path / f'{model_name}_parity.png')
         #============================================
     
 
