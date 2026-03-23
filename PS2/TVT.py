@@ -13,7 +13,7 @@ import torch.nn as nn
 
 
 
-#------------------------ TEST, VALIDATE, TRAIN FUNCTION for MLPs ---------------------------------------------------------------------
+#=================== TEST, VALIDATE, TRAIN FUNCTION for MLPs ===========================================================
 def TVT_MLP(            
         model,
         model_name,                    
@@ -52,7 +52,7 @@ def TVT_MLP(
         loss_test: float
             test loss averaged over batches
     """
-    #-----------
+    #===========
     def train():
         """
         Uses PyTorch to forward and back propagate weights and biases
@@ -73,10 +73,10 @@ def TVT_MLP(
             N += xb.size(0) # sum over number of samples in each batch
         
         return model, loss_total/N # model with updated params, avg loss
-    #-------------------------------------------------------------------
+    #===================================================================
 
 
-    #--------------
+    #==============
     def validate():
         """
         Runs validation data thru network using training parameters.
@@ -95,10 +95,10 @@ def TVT_MLP(
                 N += xb.size(0) # sum over number of samples in each batch
 
         return loss_total/N
-    #----------------------------------------------------------------------------------------
+    #======================
 
 
-    #---------------------------------------------------------------------------------------
+    #===============================================================================
     # Looping over epochs, stopping either at training or validation threshold loss:
     loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
     N_epochs = int(0) # initializing epochs looped over
@@ -118,10 +118,10 @@ def TVT_MLP(
             #
             if abs(curr_avg - prev_avg) <= delta_threshold:
                 break
-    #----------------
+    #================
 
 
-    #----------
+    #==========
     def test():
         """
         Takes final weights and biases from test and validation epoch loops
@@ -142,11 +142,11 @@ def TVT_MLP(
         y_true = torch.cat(y_true).squeeze().numpy()
         y_pred = torch.cat(y_pred).squeeze().numpy()
         return loss_total/N, y_true, y_pred
-    #--------------------------------------
+    #======================================
     
     loss_test, y_true, y_pred = test()
 
-    #---------------------------------------
+    #===================
     if plotting == True:
         # Plotting training and validation loss:
         plt.figure()
@@ -168,8 +168,7 @@ def TVT_MLP(
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
         plt.plot([mn, mx], [mn, mx], color='black')
         plt.savefig(f'./PS2/{model_name}_parity.png')
-        #-------------------------------------------
-    
+        #============================================
 
     return float(loss_test)
 #=========================================================================================================================
@@ -321,7 +320,7 @@ def TVT_MHD(
     
     loss_test, y_true, y_pred = test()
 
-    #---------------------------------------
+    #-------------------
     if plotting == True:
         # Plotting training and validation loss:
         plt.figure()
@@ -343,7 +342,7 @@ def TVT_MHD(
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
         plt.plot([mn, mx], [mn, mx], color='black')
         plt.savefig(f'./PS2/{model_name}_parity.png')
-        #-------------------------------------------
+        #--------------------------------------------
     
 
     return float(loss_test)
