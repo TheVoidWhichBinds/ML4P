@@ -36,14 +36,14 @@ loss_func = nn.MSELoss()
 
 
 
+
+
 #--------- DATA INITIALIZATION ----------------------------------------------------------------------------------------------
 #------------------
 # Downloading data:
-base_path = Path("./datasets")
+project_dir = Path(__file__).resolve().parent
+base_path = project_dir / "datasets"
 dataset_name = "MHD_64"
-
-print("cwd:", Path.cwd())
-print("base_path:", base_path.resolve())
 
 for split in ["train", "valid", "test"]:
     split_dir = base_path / dataset_name / "data" / split
@@ -79,13 +79,14 @@ train_z90 = Augmentation(
     train_orig,
     transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
 )
-train_x90 = Augmentation(
-    train_orig,
-    transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
-)
+# train_x90 = Augmentation(
+#     train_orig,
+#     transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
+# )
+
 
 # Combining augmentations:
-train_aug = ConcatDataset([train_orig, train_mag, train_z90, train_x90])
+train_aug = ConcatDataset([train_orig, train_mag, train_z90])
 
 # Validation and test data:
 valid_orig = datasets['valid']
@@ -147,20 +148,6 @@ class SpatioTemporalCNN(nn.Module):
             padding=spatial_padding,
         )
         self.spatial_conv2 = nn.Conv3d(
-            in_channels=16,
-            out_channels=32,
-            kernel_size=spatial_kernel_size,
-            stride=1,
-            padding=spatial_padding,
-        )
-        self.spatial_conv3 = nn.Conv3d(
-            in_channels=32,
-            out_channels=16,
-            kernel_size=spatial_kernel_size,
-            stride=1,
-            padding=spatial_padding,
-        )
-        self.spatial_conv4 = nn.Conv3d(
             in_channels=16,
             out_channels=7,
             kernel_size=spatial_kernel_size,
@@ -237,11 +224,6 @@ class SpatioTemporalCNN(nn.Module):
 
         X_spatial = self.spatial_conv2(X_spatial)
         X_spatial = self.act(X_spatial)
-
-        X_spatial = self.spatial_conv3(X_spatial)
-        X_spatial = self.act(X_spatial)
-
-        X_spatial = self.spatial_conv4(X_spatial)
         # X_spatial: [N*T, 7, X, Y, Z]
         #----------------------------------
 
@@ -304,22 +286,27 @@ def MHD(
         plotting: bool
 ):
     """
+    Input data is a time-evolving 64 x 64 x 64 grid of plasma
+    that obeys 3 MHD equations:
+    a spatial 3-D CNN is run, then a temporal 1-D CNN over the 
+    augmented data, modified to enforce translational equivariance,
+    rotational equivariance, and B-field parity.
     """
 
     model = SpatioTemporalCNN(
-        activation=activation,
+        activation=activation
     )
 
-    TVT_MHD(
+    return TVT_MHD(
         model=model,
         model_name='Aug',
         optimizer=torch.optim.Adam(model.parameters(), lr=learning_rate),
         loss_func=loss_func,
         epochs=epochs,
         delta_threshold=delta_threshold,
-        train_loader=DataLoader(train_aug, batch_size=8, shuffle=True),
-        valid_loader=DataLoader(valid_orig, batch_size=8, shuffle=False),
-        test_loader=DataLoader(test_orig, batch_size=8, shuffle=False),
+        train_loader=DataLoader(train_aug, batch_size=1, shuffle=True),
+        valid_loader=DataLoader(valid_orig, batch_size=1, shuffle=False),
+        test_loader=DataLoader(test_orig, batch_size=1, shuffle=False),
         plotting=plotting,
     )
 
@@ -335,6 +322,6 @@ def MHD(
 
 
 
-# # #------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
-
-# # #-------------------------------------------------------------------------------------------------------------------------------------
+#------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
+print(MHD(plotting = False))
+#-------------------------------------------------------------------------------------------------------------------------------------
