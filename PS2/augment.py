@@ -81,6 +81,7 @@ def rotation_symmetry(
         raise ValueError("num_90_rot must be 1, 2, or 3")
     #----------------------------------------------------
 
+
     #--------------------
     def rotate_sample(X):
         """

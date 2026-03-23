@@ -184,7 +184,7 @@ def TVT_MLP(
 
 
 #------------------------ TEST, VALIDATE, TRAIN FUNCTION for CNNs ---------------------------------------------------------------------
-def TVT_CNN(            
+def TVT_MHD(            
         model,
         model_name,                    
         optimizer,                
@@ -231,7 +231,9 @@ def TVT_CNN(
         loss_total = 0.0
         N = 0.0
         
-        for xb, yb in train_loader: # loop over batches
+        for batch in train_loader: # loop over batches
+            xb = batch['input_fields']
+            yb = batch['output_fields']
             optimizer.zero_grad() # refreshing gradient-tracker
             f = model(xb) # forward pass
             loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
@@ -256,7 +258,9 @@ def TVT_CNN(
 
         # Running with training weights and biases on validation data, without updating:
         with torch.no_grad():
-            for xb, yb in valid_loader:
+            for batch in valid_loader:
+                xb = batch['input_fields']
+                yb = batch['output_fields']
                 f = model(xb) # forward pass
                 loss_batch = loss_func(f, yb) # loss averaged over batch (1/B)
                 #
@@ -301,7 +305,9 @@ def TVT_CNN(
         y_true, y_pred = [], []
 
         with torch.no_grad():
-            for xb, yb in test_loader:
+            for batch in test_loader:
+                xb = batch['input_fields']
+                yb = batch['output_fields']
                 f = model(xb)
                 loss_total += loss_func(f, yb).item() * xb.size(0)
                 N += xb.size(0)
