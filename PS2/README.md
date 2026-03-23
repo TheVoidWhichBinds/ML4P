@@ -30,7 +30,7 @@ TVT_MLP (TVT.py):
 
 
 #------------------------------ P2.py --------------------------------#
-                                Sections
+                               Sections
 DATA INITIALIZATION:
 MODEL CLASS AND FORWARD FUNCTION:
 HYPERPARAMETERS AND RUNNING IT:
