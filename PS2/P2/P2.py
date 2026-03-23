@@ -55,9 +55,9 @@ for split in ['train', 'valid', 'test']:
 # Data augmentation:
 train_orig = datasets['train']
 N_train = len(train_orig)
-train_subset = N_train // 100
+train_subset = N_train // 1000
 train_orig = Subset(train_orig, range(train_subset))
-# train_mag = Augmentation(train_orig, transform=b_parity)
+train_mag = Augmentation(train_orig, transform=b_parity)
 # train_z90 = Augmentation(
 #     train_orig,
 #     transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
@@ -68,12 +68,20 @@ train_orig = Subset(train_orig, range(train_subset))
 # )
 
 # Combining augmentations:
-train_aug = ConcatDataset([train_orig])
-print('Data augmentation complete ...')
+train_aug = ConcatDataset([train_orig, train_mag])
+
 # Validation and test data:
 valid_orig = datasets['valid']
-test_orig = datasets['test']
+N_valid = len(valid_orig)
+valid_subset = N_valid // 100
+valid_orig = Subset(valid_orig, range(train_subset))
 
+test_orig = datasets['test']
+N_test = len(test_orig)
+test_subset = N_test // 100
+test_orig = Subset(test_orig, range(test_subset))
+
+print('Data augmentation complete ...')
 #---------------------------
 #=============================================================================================================================
 
@@ -101,6 +109,8 @@ class SpatioTemporalCNN(nn.Module):
 
     Assumes n_steps_output = 1.
     """
+
+    #============
     def __init__(
         self,
         spatial_kernel_size: int = 3,
@@ -119,12 +129,10 @@ class SpatioTemporalCNN(nn.Module):
         temporal_padding = temporal_kernel_size // 2
         #----------------------------------
 
-        #==================================
         # SPATIAL CNN
         # 4 convolutions: 7 -> 16 -> 32 -> 16 -> 7
         # Input to this block:  [N*T, 7, X, Y, Z]
         # Output from this block: [N*T, 7, X, Y, Z]
-        #==================================
         self.spatial_conv1 = nn.Conv3d(
             in_channels=7,
             out_channels=7,
@@ -140,12 +148,10 @@ class SpatioTemporalCNN(nn.Module):
         #     padding=spatial_padding,
         # )
 
-        #==================================
         # TEMPORAL CNN
         # Convolves over time only.
         # Input to this block:  [N*X*Y*Z, 7, T]
         # Output from this block: [N*X*Y*Z, 7, T]
-        #==================================
         self.temporal_conv1 = nn.Conv1d(
             in_channels=7,
             out_channels=7,
@@ -160,10 +166,10 @@ class SpatioTemporalCNN(nn.Module):
         #     stride=1,
         #     padding=temporal_padding,
         # )
-        #----------------------------------
+        #==============================
 
 
-    #--------------------------------------------------
+    #==================================================
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         X shape expected:
@@ -190,7 +196,7 @@ class SpatioTemporalCNN(nn.Module):
         N, T, Xdim, Ydim, Zdim, C = X.shape
         #----------------------------------
 
-        #================================================================================================
+    
         # 1. RESTRUCTURE FOR SPATIAL CNN
         #
         # Conv3d expects:
@@ -198,7 +204,6 @@ class SpatioTemporalCNN(nn.Module):
         #
         # We want to treat each time slice as its own batch element:
         #   [N, T, X, Y, Z, 7] -> [N*T, 7, X, Y, Z]
-        #================================================================================================
         X_spatial = X.reshape(N * T, Xdim, Ydim, Zdim, C)      # [N*T, X, Y, Z, 7]
         X_spatial = X_spatial.permute(0, 4, 1, 2, 3)           # [N*T, 7, X, Y, Z]
 
@@ -260,6 +265,7 @@ class SpatioTemporalCNN(nn.Module):
 
         return Y_pred
     #----------------
+    #================
 #===============================================================================================================================
 
 
@@ -272,7 +278,7 @@ class SpatioTemporalCNN(nn.Module):
 
 
 #============= HYPERPARAMETERS AND RUNNING IT ==================================================================================
-#-------
+#=======
 def MHD(
         activation,
         learning_rate,
@@ -302,19 +308,19 @@ def MHD(
         test_loader = DataLoader(test_orig, batch_size=2, shuffle=False),
         plotting = plotting,
     )
-#---------------------------
+#===========================
 
 
-#---------
+#=========
 print(MHD(
     activation = nn.LeakyReLU(),
     learning_rate = 1e-2,
     loss_func = nn.MSELoss(),
     epochs = 2,
-    delta_threshold = 1e-1,
-    plotting = False
+    delta_threshold = 1e-2,
+    plotting = True
     ))
-#-------------------
+#===================
 #===============================================================================================================================
 
 

@@ -1,9 +1,10 @@
 import numpy as np
-from astropy.io import fits 
 from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
-import time
+from pathlib import Path
+project_dir = Path(__file__).resolve().parent
+base_path = project_dir / 'P2'
 
 
 
@@ -280,7 +281,7 @@ def TVT_MHD(
     N_epochs = int(0) # initializing epochs looped over
 
     for epoch in range(epochs):
-        print(f'Train and validate run, epoch #{epoch}') 
+        print(f'Train and validate run, epoch #{epoch+1}') 
         model, loss_train = train() # 1 training update step
         loss_valid = validate() # validation loss using updated train step params
         loss_array[epoch, 0] = loss_train 
@@ -304,6 +305,7 @@ def TVT_MHD(
         Takes final weights and biases from test and validation epoch loops
         and calculates test loss.
         """
+        print('Beginning test ...')
         model.eval()
         loss_total, N = 0.0, 0
         y_true, y_pred = [], []
