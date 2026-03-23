@@ -3,6 +3,7 @@ from astropy.io import fits
 from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
+import time
 
 
 
@@ -12,8 +13,7 @@ import torch.nn as nn
 
 
 
-
-#=================== TEST, VALIDATE, TRAIN FUNCTION for MLPs ===========================================================
+#=================== TEST, VALIDATE, TRAIN FUNCTION for MLPs =============================================================
 def TVT_MLP(            
         model,
         model_name,                    
@@ -52,6 +52,7 @@ def TVT_MLP(
         loss_test: float
             test loss averaged over batches
     """
+
     #===========
     def train():
         """
@@ -182,7 +183,7 @@ def TVT_MLP(
 
 
 
-#============== TEST, VALIDATE, TRAIN FUNCTION for CNNs ================================================================#
+#============== TEST, VALIDATE, TRAIN FUNCTION for CNNs ===================================================================
 def TVT_MHD(            
         model,
         model_name,                    
@@ -220,7 +221,8 @@ def TVT_MHD(
         loss_test: float
             test loss averaged over batches
     """
-    #-----------
+
+    #===========
     def train():
         """
         Uses PyTorch to forward and back propagate weights and biases
@@ -229,8 +231,9 @@ def TVT_MHD(
         model.train()
         loss_total = 0.0
         N = 0.0
-        
+        i = 0
         for batch in train_loader: # loop over batches
+            print(f'Training batch #{i} ...')
             xb = batch['input_fields']
             yb = batch['output_fields']
             optimizer.zero_grad() # refreshing gradient-tracker
@@ -241,12 +244,12 @@ def TVT_MHD(
             #
             loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
             N += xb.size(0) # sum over number of samples in each batch
-        
+            i += 1
         return model, loss_total/N # model with updated params, avg loss
-    #-------------------------------------------------------------------
+    #===================================================================
 
 
-    #--------------
+    #==============
     def validate():
         """
         Runs validation data thru network using training parameters.
@@ -254,10 +257,11 @@ def TVT_MHD(
         model.eval()
         loss_total = 0.0
         N = 0.0
-
+        i = 0
         # Running with training weights and biases on validation data, without updating:
         with torch.no_grad():
             for batch in valid_loader:
+                print(f'Validation batch #{i}')
                 xb = batch['input_fields']
                 yb = batch['output_fields']
                 f = model(xb) # forward pass
@@ -265,17 +269,18 @@ def TVT_MHD(
                 #
                 loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
                 N += xb.size(0) # sum over number of samples in each batch
-
+                i += 1
         return loss_total/N
-    #----------------------------------------------------------------------------------------
+    #======================
 
 
-    #---------------------------------------------------------------------------------------
+    #===============================================================================
     # Looping over epochs, stopping either at training or validation threshold loss:
     loss_array = np.empty((epochs, 2)) # initializing array that tracks train and valid loss
     N_epochs = int(0) # initializing epochs looped over
 
-    for epoch in range(epochs): 
+    for epoch in range(epochs):
+        print(f'Train and validate run, epoch #{epoch}') 
         model, loss_train = train() # 1 training update step
         loss_valid = validate() # validation loss using updated train step params
         loss_array[epoch, 0] = loss_train 
@@ -290,10 +295,10 @@ def TVT_MHD(
             #
             if abs(curr_avg - prev_avg) <= delta_threshold:
                 break
-    #----------------
+    #================
 
 
-    #----------
+    #==========
     def test():
         """
         Takes final weights and biases from test and validation epoch loops
@@ -316,11 +321,12 @@ def TVT_MHD(
         y_true = torch.cat(y_true).squeeze().numpy()
         y_pred = torch.cat(y_pred).squeeze().numpy()
         return loss_total/N, y_true, y_pred
-    #--------------------------------------
+    #======================================
     
+    print('Beginning test run ...')
     loss_test, y_true, y_pred = test()
 
-    #-------------------
+    #===================
     if plotting == True:
         # Plotting training and validation loss:
         plt.figure()
@@ -342,7 +348,7 @@ def TVT_MHD(
         mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
         plt.plot([mn, mx], [mn, mx], color='black')
         plt.savefig(f'./PS2/{model_name}_parity.png')
-        #--------------------------------------------
+        #============================================
     
 
     return float(loss_test)

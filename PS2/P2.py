@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch
 from TVT import TVT_MHD
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset, ConcatDataset, Subset
 from augment import Augmentation, b_parity, rotation_symmetry
 
 # Try group averaging before augmentation and then group averaging
@@ -54,22 +54,26 @@ for split in ['train', 'valid', 'test']:
 #-------------------
 # Data augmentation:
 train_orig = datasets['train']
-train_mag = Augmentation(train_orig, transform=b_parity)
-train_z90 = Augmentation(
-    train_orig,
-    transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
-)
+N_train = len(train_orig)
+train_subset = N_train // 100
+train_orig = Subset(train_orig, range(train_subset))
+# train_mag = Augmentation(train_orig, transform=b_parity)
+# train_z90 = Augmentation(
+#     train_orig,
+#     transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
+# )
 # train_x90 = Augmentation(
 #     train_orig,
 #     transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
 # )
 
 # Combining augmentations:
-train_aug = ConcatDataset([train_orig, train_mag, train_z90])
-
+train_aug = ConcatDataset([train_orig])
+print('Data augmentation complete ...')
 # Validation and test data:
 valid_orig = datasets['valid']
 test_orig = datasets['test']
+
 #---------------------------
 #=============================================================================================================================
 
@@ -123,18 +127,18 @@ class SpatioTemporalCNN(nn.Module):
         #==================================
         self.spatial_conv1 = nn.Conv3d(
             in_channels=7,
-            out_channels=16,
-            kernel_size=spatial_kernel_size,
-            stride=1,
-            padding=spatial_padding,
-        )
-        self.spatial_conv2 = nn.Conv3d(
-            in_channels=16,
             out_channels=7,
             kernel_size=spatial_kernel_size,
             stride=1,
             padding=spatial_padding,
         )
+        # self.spatial_conv2 = nn.Conv3d(
+        #     in_channels=16,
+        #     out_channels=7,
+        #     kernel_size=spatial_kernel_size,
+        #     stride=1,
+        #     padding=spatial_padding,
+        # )
 
         #==================================
         # TEMPORAL CNN
@@ -144,18 +148,18 @@ class SpatioTemporalCNN(nn.Module):
         #==================================
         self.temporal_conv1 = nn.Conv1d(
             in_channels=7,
-            out_channels=16,
-            kernel_size=temporal_kernel_size,
-            stride=1,
-            padding=temporal_padding,
-        )
-        self.temporal_conv2 = nn.Conv1d(
-            in_channels=16,
             out_channels=7,
             kernel_size=temporal_kernel_size,
             stride=1,
             padding=temporal_padding,
         )
+        # self.temporal_conv2 = nn.Conv1d(
+        #     in_channels=16,
+        #     out_channels=7,
+        #     kernel_size=temporal_kernel_size,
+        #     stride=1,
+        #     padding=temporal_padding,
+        # )
         #----------------------------------
 
 
@@ -203,8 +207,8 @@ class SpatioTemporalCNN(nn.Module):
         X_spatial = self.spatial_conv1(X_spatial)
         X_spatial = self.act(X_spatial)
 
-        X_spatial = self.spatial_conv2(X_spatial)
-        X_spatial = self.act(X_spatial)
+        # X_spatial = self.spatial_conv2(X_spatial)
+        # X_spatial = self.act(X_spatial)
         # X_spatial: [N*T, 7, X, Y, Z]
         #----------------------------------
 
@@ -237,7 +241,7 @@ class SpatioTemporalCNN(nn.Module):
         X_temporal = self.temporal_conv1(X_temporal)
         X_temporal = self.act(X_temporal)
 
-        X_temporal = self.temporal_conv2(X_temporal)
+        # X_temporal = self.temporal_conv2(X_temporal)
         # X_temporal: [N*X*Y*Z, 7, T]
         #----------------------------------
 
@@ -293,9 +297,9 @@ def MHD(
         loss_func = loss_func,
         epochs = epochs,
         delta_threshold = delta_threshold,
-        train_loader = DataLoader(train_aug, batch_size=1, shuffle=True),
-        valid_loader = DataLoader(valid_orig, batch_size=1, shuffle=False),
-        test_loader = DataLoader(test_orig, batch_size=1, shuffle=False),
+        train_loader = DataLoader(train_aug, batch_size=2, shuffle=True),
+        valid_loader = DataLoader(valid_orig, batch_size=2, shuffle=False),
+        test_loader = DataLoader(test_orig, batch_size=2, shuffle=False),
         plotting = plotting,
     )
 #---------------------------
@@ -303,11 +307,11 @@ def MHD(
 
 #---------
 print(MHD(
-    activation = nn.LeakyReLU,
-    learning_rate = 1e-3,
+    activation = nn.LeakyReLU(),
+    learning_rate = 1e-2,
     loss_func = nn.MSELoss(),
-    epochs = 10,
-    delta_threshold = 1e-2,
+    epochs = 2,
+    delta_threshold = 1e-1,
     plotting = False
     ))
 #-------------------
