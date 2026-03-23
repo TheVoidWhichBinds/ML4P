@@ -9,8 +9,8 @@ from torch.utils.data import Dataset
 
 
 
-#--------- AUGMENTATION HELPERS -----------------------------------------------------------
-#---------------------------
+#============= AUGMENTATION ====================================================
+#===========================
 class Augmentation(Dataset):
     """
     Class that takes in original dataset and creates a transformed
@@ -28,12 +28,12 @@ class Augmentation(Dataset):
         if self.transform is None:
             return sample
         return self.transform(sample)
-#------------------------------------
+#====================================
 
 
 
 
-#--------------------
+#====================
 def b_parity(sample):
     """
     Magnetic field parity. 
@@ -50,12 +50,12 @@ def b_parity(sample):
     new_sample["input_fields"] = X_in
     new_sample["output_fields"] = X_out
     return new_sample
-#--------------------
+#====================
 
 
 
 
-#---------------------
+#=====================
 def rotation_symmetry(
             sample, 
             axis_rot: str, 
@@ -150,8 +150,8 @@ def rotation_symmetry(
 
 
     return new_sample
-#--------------------
-#------------------------------------------------------------------------------------------
+#====================
+#===============================================================================
 
 
 

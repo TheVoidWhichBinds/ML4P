@@ -23,12 +23,20 @@ VARIABLE MLP: Multi-Layer Perceptron that takes func as an argument,
     optional even functions (cos, cosh, even poly, exp(x**2)).
 RUNNING IT: baseline: standard MLP. Z2: Z2-enforcing function. Also
     contains the actual function calls. 
+TVT_MLP (TVT.py):
 
                                 Part 1
 
 
 
 #------------------------------ P2.py --------------------------------#
+                                Sections
+DATA INITIALIZATION:
+MODEL CLASS AND FORWARD FUNCTION:
+HYPERPARAMETERS AND RUNNING IT:
+AUGMENTATION (augment.py):
+TVT_MHD (TVT.py):
+
                                 Part 1
 (a) Dataset = MHD_64 - DESCRIPTION
 (b) The symmetries I am enforcing are: 
