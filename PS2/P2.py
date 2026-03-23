@@ -8,7 +8,8 @@ from TVT import TVT_MHD
 from torch.utils.data import Dataset, ConcatDataset
 from augment import Augmentation, b_parity, rotation_symmetry
 
-
+# Try group averaging before augmentation and then group averaging
+# plus augmentation 
 
 
 
