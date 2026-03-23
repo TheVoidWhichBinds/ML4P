@@ -17,28 +17,7 @@ from augment import Augmentation, b_parity, rotation_symmetry
 
 
 
-#------------------- HYPERPARAMETERS ---------------------------------------------------------------------------------------
-epochs = 100
-delta_threshold = 1e-4
-learning_rate = 1e-3
-batch_fractions = [0.25, 0.25, 0.25] # Fraction of total train, validate, and testing (respectively) data per batch
-dim_hidden = [128, 64, 28] # nodes in each hidden layer # DELETE???
-activation = nn.LeakyReLU() 
-loss_func = nn.MSELoss()
-#---------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-#--------- DATA INITIALIZATION ----------------------------------------------------------------------------------------------
+#============= DATA INITIALIZATION ============================================================================================
 #------------------
 # Downloading data:
 project_dir = Path(__file__).resolve().parent
@@ -71,7 +50,7 @@ for split in ['train', 'valid', 'test']:
 #---------------------------------
 
 
-#----------------------------------
+#-------------------
 # Data augmentation:
 train_orig = datasets['train']
 train_mag = Augmentation(train_orig, transform=b_parity)
@@ -84,14 +63,14 @@ train_z90 = Augmentation(
 #     transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
 # )
 
-
 # Combining augmentations:
 train_aug = ConcatDataset([train_orig, train_mag, train_z90])
 
 # Validation and test data:
 valid_orig = datasets['valid']
 test_orig = datasets['test']
-#----------------------------------------------------------------------------------------------------------------------------
+#---------------------------
+#=============================================================================================================================
 
 
 
@@ -102,7 +81,8 @@ test_orig = datasets['test']
 
 
 
-#----------------------------------------------------------------------------------------------------------------------------
+#============= MODEL CLASS AND FORWARD FUNCTION ===============================================================================
+#==================================
 class SpatioTemporalCNN(nn.Module):
     """
     Model for Well MHD_64 data with input shape:
@@ -178,7 +158,7 @@ class SpatioTemporalCNN(nn.Module):
         #----------------------------------
 
 
-    #------------------------------------------------------------------------------------------------
+    #--------------------------------------------------
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         X shape expected:
@@ -227,15 +207,14 @@ class SpatioTemporalCNN(nn.Module):
         # X_spatial: [N*T, 7, X, Y, Z]
         #----------------------------------
 
-        #================================================================================================
+
         # 2. TAKE SPATIAL OUTPUT BACK TO TIME-INDEXED FORM
         #
         # [N*T, 7, X, Y, Z] -> [N, T, X, Y, Z, 7]
-        #================================================================================================
         X_spatial = X_spatial.permute(0, 2, 3, 4, 1)           # [N*T, X, Y, Z, 7]
         X_spatial = X_spatial.reshape(N, T, Xdim, Ydim, Zdim, 7)
 
-        #================================================================================================
+
         # 3. RESTRUCTURE FOR TEMPORAL CNN
         #
         # We now want Conv1d over time only.
@@ -249,7 +228,6 @@ class SpatioTemporalCNN(nn.Module):
         #
         # Then collapse (N,X,Y,Z) into batch:
         #   [N*X*Y*Z, 7, T]
-        #================================================================================================
         X_temporal = X_spatial.permute(0, 2, 3, 4, 5, 1)       # [N, X, Y, Z, 7, T]
         X_temporal = X_temporal.reshape(N * Xdim * Ydim * Zdim, 7, T)
 
@@ -262,7 +240,7 @@ class SpatioTemporalCNN(nn.Module):
         # X_temporal: [N*X*Y*Z, 7, T]
         #----------------------------------
 
-        #================================================================================================
+        
         # 4. TAKE TEMPORAL OUTPUT BACK TO WELL-STYLE FORM
         #
         # Since n_steps_output = 1, we take the final time index after temporal convolution.
@@ -270,21 +248,34 @@ class SpatioTemporalCNN(nn.Module):
         # [N*X*Y*Z, 7, T] -> last time slice -> [N*X*Y*Z, 7]
         # -> [N, X, Y, Z, 7]
         # -> [N, 1, X, Y, Z, 7]
-        #================================================================================================
+        #------------------------------
         X_temporal = X_temporal[:, :, -1]                       # [N*X*Y*Z, 7]
         Y_pred = X_temporal.reshape(N, Xdim, Ydim, Zdim, 7)    # [N, X, Y, Z, 7]
         Y_pred = Y_pred.unsqueeze(1)                            # [N, 1, X, Y, Z, 7]
 
         return Y_pred
-    #------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------
+    #----------------
+#===============================================================================================================================
 
 
 
 
+
+
+
+
+
+
+#============= HYPERPARAMETERS AND RUNNING IT ==================================================================================
+#-------
 def MHD(
-        plotting: bool
-):
+        activation,
+        learning_rate,
+        loss_func,
+        epochs,
+        delta_threshold,
+        plotting:bool
+    ):
     """
     Input data is a time-evolving 64 x 64 x 64 grid of plasma
     that obeys 3 MHD equations:
@@ -292,36 +283,34 @@ def MHD(
     augmented data, modified to enforce translational equivariance,
     rotational equivariance, and B-field parity.
     """
-
-    model = SpatioTemporalCNN(
-        activation=activation
-    )
+    model = SpatioTemporalCNN(activation=activation)
 
     return TVT_MHD(
-        model=model,
-        model_name='Aug',
-        optimizer=torch.optim.Adam(model.parameters(), lr=learning_rate),
-        loss_func=loss_func,
-        epochs=epochs,
-        delta_threshold=delta_threshold,
-        train_loader=DataLoader(train_aug, batch_size=1, shuffle=True),
-        valid_loader=DataLoader(valid_orig, batch_size=1, shuffle=False),
-        test_loader=DataLoader(test_orig, batch_size=1, shuffle=False),
-        plotting=plotting,
+        model = model,
+        model_name = 'Augmented CNN',
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
+        loss_func = loss_func,
+        epochs = epochs,
+        delta_threshold = delta_threshold,
+        train_loader = DataLoader(train_aug, batch_size=1, shuffle=True),
+        valid_loader = DataLoader(valid_orig, batch_size=1, shuffle=False),
+        test_loader = DataLoader(test_orig, batch_size=1, shuffle=False),
+        plotting = plotting,
     )
+#---------------------------
 
 
-#-------------------------------------------------------------------------------------------------------------------------------------
+#---------
+print(MHD(
+    activation = nn.LeakyReLU,
+    learning_rate = 1e-3,
+    loss_func = nn.MSELoss(),
+    epochs = 10,
+    delta_threshold = 1e-2,
+    plotting = False
+    ))
+#-------------------
+#===============================================================================================================================
 
 
 
-
-
-
-
-
-
-
-#------------------- RUNNING IT ------------------------------------------------------------------------------------------------------
-print(MHD(plotting = False))
-#-------------------------------------------------------------------------------------------------------------------------------------
