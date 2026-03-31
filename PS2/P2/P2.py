@@ -5,12 +5,82 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch
 from TVT import TVT_MHD
-from torch.utils.data import Dataset, ConcatDataset, Subset
+from torch.utils.data import ConcatDataset, Subset
 from .augment import Augmentation, b_parity, rotation_symmetry
 
 # Try group averaging before augmentation and then group averaging
-# plus augmentation 
+# plus augmentation
 
+
+
+
+
+
+#============= ADJUSTABLE HYPERPARAMETERS =====================================================================================
+#===============
+# Subset factor:
+train_divisor = 1000
+valid_divisor = 10
+test_divisor = 10
+#===============
+
+
+#=======================
+# Symmetry architecture:
+symmetry_MHD_config = {
+    # DataLoader settings:
+    "train_batch_size": 2,
+    "valid_batch_size": 2,
+    "test_batch_size": 2,
+    "train_shuffle": True,
+    "eval_shuffle": False,
+
+    # Model architecture settings:
+    "spatial_kernel_size": 3,
+    "temporal_kernel_size": 3,
+    "hidden_channels": 4,
+    "activation": nn.LeakyReLU(),
+
+    # Optimizer / training settings:
+    "learning_rate": 1e-3,
+    "loss_func": nn.MSELoss(),
+    "epochs": 10,
+    "delta_threshold": 1e-2,
+    "plotting": True,
+
+    # Naming:
+    "model_name": "Symmetry MHD",
+}
+#================================
+
+
+#======================
+baseline_MHD_config = {
+    # DataLoader settings:
+    "train_batch_size": 2,
+    "valid_batch_size": 2,
+    "test_batch_size": 2,
+    "train_shuffle": True,
+    "eval_shuffle": False,
+
+    # Model architecture settings:
+    "spatial_kernel_size": 3,
+    "temporal_kernel_size": 3,
+    "hidden_channels": 4,
+    "activation": nn.LeakyReLU(),
+
+    # Optimizer / training settings:
+    "learning_rate": 1e-3,
+    "loss_func": nn.MSELoss(),
+    "epochs": 10,
+    "delta_threshold": 1e-2,
+    "plotting": True,
+
+    # Naming:
+    "model_name": "Baseline MHD",
+}
+#=================================
+#=============================================================================================================================
 
 
 
@@ -19,70 +89,82 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 
 
 #============= DATA INITIALIZATION ============================================================================================
-#------------------
+#==================
 # Downloading data:
 project_dir = Path(__file__).resolve().parent.parent
 base_path = project_dir / "datasets"
-dataset_name = "MHD_64"
 
 for split in ["train", "valid", "test"]:
-    split_dir = base_path / dataset_name / "data" / split
+    split_dir = base_path / "MHD_64" / "data" / split
     if not split_dir.exists():
         well_download(
-            base_path=str(base_path),
-            dataset=dataset_name,
-            split=split,
+            base_path = str(base_path),
+            dataset = "MHD_64",
+            split = split,
         )
-#-----------------------
+#=========================
 
 
-#----------------------------------------
+#========================================
 # Splitting data into train, valid, test:
 datasets = {} # initializing dictionary
-for split in ['train', 'valid', 'test']:
+for split in ["train", "valid", "test"]:
     datasets[split] = WellDataset( # generating key-value pairs
         well_base_path = str(base_path),
-        well_dataset_name = dataset_name,
+        well_dataset_name = "MHD_64",
         well_split_name = split,
-        n_steps_input = 4, 
+        n_steps_input = 4,
         n_steps_output = 1,
         use_normalization = False,
     )
-#---------------------------------
+#=================================
 
 
+#===================
 #-------------------
 # Data augmentation:
-train_orig = datasets['train']
-N_train = len(train_orig)
-train_subset = N_train // 100
-train_orig = Subset(train_orig, range(train_subset))
+train_orig = datasets["train"]
 train_mag = Augmentation(train_orig, transform=b_parity)
-# train_z90 = Augmentation(
-#     train_orig,
-#     transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
-# )
-# train_x90 = Augmentation(
-#     train_orig,
-#     transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
-# )
+train_z180 = Augmentation(
+    train_orig,
+    transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=2)
+)
+train_x90 = Augmentation(
+    train_orig,
+    transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
+)
+train_y270 = Augmentation(
+    train_orig,
+    transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=3)
+)
+#---------------------------------------------------------------------------------
 
-# Combining augmentations:
-train_aug = ConcatDataset([train_orig, train_mag])
 
-# Validation and test data:
-valid_orig = datasets['valid']
+#-------------------------------
+# Combining train augmentations:
+train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
+N_train = len(train_aug)
+train_subset = N_train // train_divisor
+indices = torch.randperm(N_train)[:train_subset]
+train_aug = Subset(train_aug, indices)
+
+# Validation data:
+valid_orig = datasets["valid"]
 N_valid = len(valid_orig)
-valid_subset = N_valid // 10
-valid_orig = Subset(valid_orig, range(train_subset))
+valid_subset = N_valid // valid_divisor
+indices = torch.randperm(N_valid)[:valid_subset]
+valid_orig = Subset(valid_orig, indices)
 
-test_orig = datasets['test']
+# Test data:
+test_orig = datasets["test"]
 N_test = len(test_orig)
-test_subset = N_test // 10
-test_orig = Subset(test_orig, range(test_subset))
+test_subset = N_test // test_divisor
+indices = torch.randperm(N_test)[:test_subset]
+test_orig = Subset(test_orig, indices)
 
-print('Data augmentation complete ...')
-#---------------------------
+print("Data augmentation complete ...")
+#--------------------------------------
+#======================================
 #=============================================================================================================================
 
 
@@ -94,20 +176,23 @@ print('Data augmentation complete ...')
 
 
 
-#============= MODEL CLASS AND FORWARD FUNCTION ===============================================================================
+#============= MODEL ==========================================================================================
 #==================================
 class SpatioTemporalCNN(nn.Module):
     """
-    Model for Well MHD_64 data with input shape:
+    Input:
         X : [N, T, X, Y, Z, 7]
 
-    Pipeline:
-      1. Spatial CNN: convolve over (X,Y,Z) independently for each time slice
-      2. Temporal CNN: convolve over T independently at each voxel
-      3. Return output in Well-style format:
-           [N, 1, X, Y, Z, 7]
+    Output:
+        Y_pred : [N, 1, X, Y, Z, 7]
 
-    Assumes n_steps_output = 1.
+    Architecture:
+      1. Spatial encoder:
+           full resolution -> lower resolution
+      2. Temporal conv:
+           operate over time at reduced spatial resolution
+      3. Spatial decoder:
+           lower resolution -> full resolution
     """
 
     #============
@@ -115,6 +200,7 @@ class SpatioTemporalCNN(nn.Module):
         self,
         spatial_kernel_size: int = 3,
         temporal_kernel_size: int = 3,
+        hidden_channels: int = 16,
         activation: nn.Module | None = None,
     ):
         super().__init__()
@@ -123,149 +209,162 @@ class SpatioTemporalCNN(nn.Module):
             activation = nn.ReLU()
         self.act = activation
 
-        #----------------------------------
-        # To preserve dimensions for odd kernel sizes:
         spatial_padding = spatial_kernel_size // 2
         temporal_padding = temporal_kernel_size // 2
-        #----------------------------------
 
-        # SPATIAL CNN
-        # 4 convolutions: 7 -> 16 -> 32 -> 16 -> 7
-        # Input to this block:  [N*T, 7, X, Y, Z]
-        # Output from this block: [N*T, 7, X, Y, Z]
-        self.spatial_conv1 = nn.Conv3d(
-            in_channels=7,
-            out_channels=7,
-            kernel_size=spatial_kernel_size,
-            stride=1,
-            padding=spatial_padding,
+        # -----------------------------
+        # SPATIAL ENCODER
+        # [N*T, 7, 64, 64, 64]
+        # -> [N*T, hidden_channels, 32, 32, 32]
+        # -----------------------------
+        self.spatial_down = nn.Conv3d(
+            in_channels = 7,
+            out_channels = hidden_channels,
+            kernel_size = spatial_kernel_size,
+            stride = 2,
+            padding = spatial_padding,
         )
-        # self.spatial_conv2 = nn.Conv3d(
-        #     in_channels=16,
-        #     out_channels=7,
-        #     kernel_size=spatial_kernel_size,
-        #     stride=1,
-        #     padding=spatial_padding,
-        # )
 
+        # Optional extra processing at low resolution
+        self.spatial_lowres = nn.Conv3d(
+            in_channels = hidden_channels,
+            out_channels = hidden_channels,
+            kernel_size = spatial_kernel_size,
+            stride = 1,
+            padding = spatial_padding,
+        )
+
+        # -----------------------------
         # TEMPORAL CNN
-        # Convolves over time only.
-        # Input to this block:  [N*X*Y*Z, 7, T]
-        # Output from this block: [N*X*Y*Z, 7, T]
-        self.temporal_conv1 = nn.Conv1d(
-            in_channels=7,
-            out_channels=7,
-            kernel_size=temporal_kernel_size,
-            stride=1,
-            padding=temporal_padding,
+        # Input:
+        #   [N*X_low*Y_low*Z_low, hidden_channels, T]
+        # Output:
+        #   same shape
+        # -----------------------------
+        self.temporal_conv = nn.Conv1d(
+            in_channels = hidden_channels,
+            out_channels = hidden_channels,
+            kernel_size = temporal_kernel_size,
+            stride = 1,
+            padding = temporal_padding,
         )
-        # self.temporal_conv2 = nn.Conv1d(
-        #     in_channels=16,
-        #     out_channels=7,
-        #     kernel_size=temporal_kernel_size,
-        #     stride=1,
-        #     padding=temporal_padding,
-        # )
-        #==============================
+
+        # -----------------------------
+        # SPATIAL DECODER
+        # [N, hidden_channels, 32, 32, 32]
+        # -> [N, 7, 64, 64, 64]
+        # -----------------------------
+        self.spatial_up = nn.ConvTranspose3d(
+            in_channels = hidden_channels,
+            out_channels = hidden_channels,
+            kernel_size = 4,
+            stride = 2,
+            padding = 1,
+        )
+
+        self.spatial_out = nn.Conv3d(
+            in_channels = hidden_channels,
+            out_channels = 7,
+            kernel_size = spatial_kernel_size,
+            stride = 1,
+            padding = spatial_padding,
+        )
+    #=====================
 
 
-    #==================================================
+    #========================
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
-        X shape expected:
+        X shape:
             [N, T, Xdim, Ydim, Zdim, 7]
 
         Returns:
-            Y_pred with shape [N, 1, Xdim, Ydim, Zdim, 7]
+            [N, 1, Xdim, Ydim, Zdim, 7]
         """
-        #----------------------------------
-        # Checking input shape:
         if X.ndim != 6:
             raise ValueError(
-                f"Expected input of shape [N, T, X, Y, Z, 7], but got shape {tuple(X.shape)}"
+                f"Expected input of shape [N, T, X, Y, Z, 7], got {tuple(X.shape)}"
             )
         if X.shape[-1] != 7:
             raise ValueError(
-                f"Expected 7 channels in last dimension, but got {X.shape[-1]}"
+                f"Expected last dimension to have size 7, got {X.shape[-1]}"
             )
-        #----------------------------------
 
-        #----------------------------------
-        # Original shape:
-        # X = [N, T, Xdim, Ydim, Zdim, 7]
         N, T, Xdim, Ydim, Zdim, C = X.shape
-        #----------------------------------
 
-    
-        # 1. RESTRUCTURE FOR SPATIAL CNN
-        #
-        # Conv3d expects:
-        #   [batch, channels, D, H, W]
-        #
-        # We want to treat each time slice as its own batch element:
-        #   [N, T, X, Y, Z, 7] -> [N*T, 7, X, Y, Z]
-        X_spatial = X.reshape(N * T, Xdim, Ydim, Zdim, C)      # [N*T, X, Y, Z, 7]
-        X_spatial = X_spatial.permute(0, 4, 1, 2, 3)           # [N*T, 7, X, Y, Z]
+        # ==================================================
+        # 1. SPATIAL ENCODER ON EACH TIME SLICE
+        # [N, T, X, Y, Z, 7]
+        # -> [N*T, 7, X, Y, Z]
+        # -> [N*T, hidden_channels, X/2, Y/2, Z/2]
+        # ==================================================
+        X_spatial = X.reshape(N * T, Xdim, Ydim, Zdim, C)
+        X_spatial = X_spatial.permute(0, 4, 1, 2, 3)
 
-        #-------------
-        # Spatial CNN:
-        X_spatial = self.spatial_conv1(X_spatial)
+        X_spatial = self.spatial_down(X_spatial)
         X_spatial = self.act(X_spatial)
 
-        # X_spatial = self.spatial_conv2(X_spatial)
-        # X_spatial = self.act(X_spatial)
-        # X_spatial: [N*T, 7, X, Y, Z]
-        #----------------------------------
+        X_spatial = self.spatial_lowres(X_spatial)
+        X_spatial = self.act(X_spatial)
 
+        # low-resolution spatial dimensions
+        _, H, Xlow, Ylow, Zlow = X_spatial.shape
 
-        # 2. TAKE SPATIAL OUTPUT BACK TO TIME-INDEXED FORM
-        #
-        # [N*T, 7, X, Y, Z] -> [N, T, X, Y, Z, 7]
-        X_spatial = X_spatial.permute(0, 2, 3, 4, 1)           # [N*T, X, Y, Z, 7]
-        X_spatial = X_spatial.reshape(N, T, Xdim, Ydim, Zdim, 7)
+        # ==================================================
+        # 2. BACK TO TIME-INDEXED FORM
+        # [N*T, H, Xlow, Ylow, Zlow]
+        # -> [N, T, Xlow, Ylow, Zlow, H]
+        # ==================================================
+        X_spatial = X_spatial.permute(0, 2, 3, 4, 1)
+        X_spatial = X_spatial.reshape(N, T, Xlow, Ylow, Zlow, H)
 
+        # ==================================================
+        # 3. TEMPORAL CONV AT LOWER RESOLUTION
+        # [N, T, Xlow, Ylow, Zlow, H]
+        # -> [N, Xlow, Ylow, Zlow, H, T]
+        # -> [N*Xlow*Ylow*Zlow, H, T]
+        # ==================================================
+        X_temporal = X_spatial.permute(0, 2, 3, 4, 5, 1)
+        X_temporal = X_temporal.reshape(N * Xlow * Ylow * Zlow, H, T)
 
-        # 3. RESTRUCTURE FOR TEMPORAL CNN
-        #
-        # We now want Conv1d over time only.
-        # At each voxel (x,y,z), we take its T-step history and convolve over T.
-        #
-        # Start:
-        #   [N, T, X, Y, Z, 7]
-        #
-        # Rearrange to:
-        #   [N, X, Y, Z, 7, T]
-        #
-        # Then collapse (N,X,Y,Z) into batch:
-        #   [N*X*Y*Z, 7, T]
-        X_temporal = X_spatial.permute(0, 2, 3, 4, 5, 1)       # [N, X, Y, Z, 7, T]
-        X_temporal = X_temporal.reshape(N * Xdim * Ydim * Zdim, 7, T)
-
-        #----------------------------------
-        # Temporal CNN:
-        X_temporal = self.temporal_conv1(X_temporal)
+        X_temporal = self.temporal_conv(X_temporal)
         X_temporal = self.act(X_temporal)
 
-        # X_temporal = self.temporal_conv2(X_temporal)
-        # X_temporal: [N*X*Y*Z, 7, T]
-        #----------------------------------
+        # take final time index
+        # [N*Xlow*Ylow*Zlow, H, T] -> [N*Xlow*Ylow*Zlow, H]
+        X_temporal = X_temporal[:, :, -1]
 
-        
-        # 4. TAKE TEMPORAL OUTPUT BACK TO WELL-STYLE FORM
-        #
-        # Since n_steps_output = 1, we take the final time index after temporal convolution.
-        #
-        # [N*X*Y*Z, 7, T] -> last time slice -> [N*X*Y*Z, 7]
-        # -> [N, X, Y, Z, 7]
-        # -> [N, 1, X, Y, Z, 7]
-        #------------------------------
-        X_temporal = X_temporal[:, :, -1]                       # [N*X*Y*Z, 7]
-        Y_pred = X_temporal.reshape(N, Xdim, Ydim, Zdim, 7)    # [N, X, Y, Z, 7]
-        Y_pred = Y_pred.unsqueeze(1)                            # [N, 1, X, Y, Z, 7]
+        # ==================================================
+        # 4. BACK TO LOW-RES 3D GRID
+        # [N*Xlow*Ylow*Zlow, H]
+        # -> [N, H, Xlow, Ylow, Zlow]
+        # ==================================================
+        X_dec = X_temporal.reshape(N, Xlow, Ylow, Zlow, H)
+        X_dec = X_dec.permute(0, 4, 1, 2, 3)
+
+        # ==================================================
+        # 5. UPSAMPLE BACK TO FULL RESOLUTION
+        # [N, H, Xlow, Ylow, Zlow]
+        # -> [N, H, Xdim, Ydim, Zdim]
+        # -> [N, 7, Xdim, Ydim, Zdim]
+        # ==================================================
+        X_dec = self.spatial_up(X_dec)
+        X_dec = self.act(X_dec)
+
+        X_dec = self.spatial_out(X_dec)
+
+        # ==================================================
+        # 6. RETURN TO WELL FORMAT
+        # [N, 7, Xdim, Ydim, Zdim]
+        # -> [N, Xdim, Ydim, Zdim, 7]
+        # -> [N, 1, Xdim, Ydim, Zdim, 7]
+        # ==================================================
+        Y_pred = X_dec.permute(0, 2, 3, 4, 1)
+        Y_pred = Y_pred.unsqueeze(1)
 
         return Y_pred
-    #----------------
     #================
+#====================
 #===============================================================================================================================
 
 
@@ -277,51 +376,138 @@ class SpatioTemporalCNN(nn.Module):
 
 
 
-#============= HYPERPARAMETERS AND RUNNING IT ==================================================================================
-#=======
-def MHD(
+#============= RUNNING IT ======================================================================================================
+#================
+def symmetry_MHD(
+        model_name,
+        spatial_kernel_size,
+        temporal_kernel_size,
+        hidden_channels,
         activation,
         learning_rate,
         loss_func,
         epochs,
         delta_threshold,
-        plotting:bool
+        train_batch_size,
+        valid_batch_size,
+        test_batch_size,
+        train_shuffle,
+        eval_shuffle,
+        plotting: bool,
+        **kwargs,
     ):
     """
     Input data is a time-evolving 64 x 64 x 64 grid of plasma
-    that obeys 3 MHD equations:
-    a spatial 3-D CNN is run, then a temporal 1-D CNN over the 
-    augmented data, modified to enforce translational equivariance,
+    that obeys MHD equations.
+
+    A spatial 3-D CNN is run, then a temporal 1-D CNN over the
+    augmented data, modified to exploit translational equivariance,
     rotational equivariance, and B-field parity.
     """
-    model = SpatioTemporalCNN(activation=activation)
+    model = SpatioTemporalCNN(
+        spatial_kernel_size = spatial_kernel_size,
+        temporal_kernel_size = temporal_kernel_size,
+        hidden_channels = hidden_channels,
+        activation = activation,
+    )
 
     return TVT_MHD(
         model = model,
-        model_name = 'Aug_CNN',
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate),
+        model_name = model_name,
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr = learning_rate,
+        ),
         loss_func = loss_func,
         epochs = epochs,
         delta_threshold = delta_threshold,
-        train_loader = DataLoader(train_aug, batch_size=2, shuffle=True),
-        valid_loader = DataLoader(valid_orig, batch_size=2, shuffle=False),
-        test_loader = DataLoader(test_orig, batch_size=2, shuffle=False),
+        train_loader = DataLoader(
+            train_aug,
+            batch_size = train_batch_size,
+            shuffle = train_shuffle,
+        ),
+        valid_loader = DataLoader(
+            valid_orig,
+            batch_size = valid_batch_size,
+            shuffle = eval_shuffle,
+        ),
+        test_loader = DataLoader(
+            test_orig,
+            batch_size = test_batch_size,
+            shuffle = eval_shuffle,
+        ),
         plotting = plotting,
     )
 #===========================
 
 
-#=========
-print(MHD(
-    activation = nn.LeakyReLU(),
-    learning_rate = 1e-2,
-    loss_func = nn.MSELoss(),
-    epochs = 2,
-    delta_threshold = 1e-2,
-    plotting = True
-    ))
-#===================
+#================
+def baseline_MHD(
+        model_name,
+        spatial_kernel_size,
+        temporal_kernel_size,
+        hidden_channels,
+        activation,
+        learning_rate,
+        loss_func,
+        epochs,
+        delta_threshold,
+        train_batch_size,
+        valid_batch_size,
+        test_batch_size,
+        train_shuffle,
+        eval_shuffle,
+        plotting: bool,
+        **kwargs,
+    ):
+    """
+    Baseline model:
+    same spatiotemporal CNN architecture, but trained on the
+    original non-augmented data.
+    """
+    model = SpatioTemporalCNN(
+        spatial_kernel_size = spatial_kernel_size,
+        temporal_kernel_size = temporal_kernel_size,
+        hidden_channels = hidden_channels,
+        activation = activation,
+    )
+
+    return TVT_MHD(
+        model = model,
+        model_name = model_name,
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr = learning_rate,
+        ),
+        loss_func = loss_func,
+        epochs = epochs,
+        delta_threshold = delta_threshold,
+        train_loader = DataLoader(
+            train_orig,
+            batch_size = train_batch_size,
+            shuffle = train_shuffle,
+        ),
+        valid_loader = DataLoader(
+            valid_orig,
+            batch_size = valid_batch_size,
+            shuffle = eval_shuffle,
+        ),
+        test_loader = DataLoader(
+            test_orig,
+            batch_size = test_batch_size,
+            shuffle = eval_shuffle,
+        ),
+        plotting = plotting,
+    )
+#===========================
+
+
+#=========================
+if __name__ == "__main__":
+    symmetry_results = symmetry_MHD(**symmetry_MHD_config)
+    print(symmetry_results)
+
+    baseline_results = baseline_MHD(**baseline_MHD_config)
+    print(baseline_results)
+#==========================
 #===============================================================================================================================
-
-
-

@@ -73,5 +73,9 @@ TVT_MHD (TVT.py): Train, validate, test function, same as TVT_MLP but
 
 
 
-LLM Usage:
+
+
+
+
+LLM Usage: Packaging feature matrices into forms acceptable by Conv3d, Conv1d, 
     

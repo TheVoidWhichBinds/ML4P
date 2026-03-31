@@ -217,7 +217,7 @@ def TVT_MHD(
         train_loader, valid_loader, test_loader:
             Data subdivided into batches of prescribed size
         plotting: bool
-            Plots train and validation loss, test parity plots
+            Plots train and validation loss
         ------- Returns --------------------------------------
         loss_test: float
             test loss averaged over batches
@@ -233,6 +233,7 @@ def TVT_MHD(
         loss_total = 0.0
         N = 0.0
         i = 0
+
         for batch in train_loader: # loop over batches
             print(f'Training batch #{i} ...')
             xb = batch['input_fields']
@@ -246,7 +247,8 @@ def TVT_MHD(
             loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
             N += xb.size(0) # sum over number of samples in each batch
             i += 1
-        return model, loss_total/N # model with updated params, avg loss
+
+        return model, loss_total / N # model with updated params, avg loss
     #===================================================================
 
 
@@ -259,6 +261,7 @@ def TVT_MHD(
         loss_total = 0.0
         N = 0.0
         i = 0
+
         # Running with training weights and biases on validation data, without updating:
         with torch.no_grad():
             for batch in valid_loader:
@@ -271,7 +274,8 @@ def TVT_MHD(
                 loss_total += loss_batch.item() * xb.size(0)  # sum over batch sum of squares
                 N += xb.size(0) # sum over number of samples in each batch
                 i += 1
-        return loss_total/N
+
+        return loss_total / N
     #======================
 
 
@@ -281,15 +285,15 @@ def TVT_MHD(
     N_epochs = int(0) # initializing epochs looped over
 
     for epoch in range(epochs):
-        print(f'Train and validate run, epoch #{epoch+1}') 
+        print(f'Train and validate run, epoch #{epoch+1}')
         model, loss_train = train() # 1 training update step
         loss_valid = validate() # validation loss using updated train step params
-        loss_array[epoch, 0] = loss_train 
+        loss_array[epoch, 0] = loss_train
         loss_array[epoch, 1] = loss_valid
         #
-        N_epochs += 1 
+        N_epochs += 1
         #
-        avg_size = 10  # number of epochs to average over 
+        avg_size = 10  # number of epochs to average over
         if epoch + 1 >= 2 * avg_size: # checking for stop condition only after 2 * avg_size
             curr_avg = loss_array[epoch-avg_size+1: epoch+1, 1].mean()
             prev_avg = loss_array[epoch-2*avg_size+1: epoch-avg_size+1, 1].mean()
@@ -302,31 +306,30 @@ def TVT_MHD(
     #==========
     def test():
         """
-        Takes final weights and biases from test and validation epoch loops
+        Takes final weights and biases from train and validation epoch loops
         and calculates test loss.
         """
         print('Beginning test ...')
         model.eval()
-        loss_total, N = 0.0, 0
-        y_true, y_pred = [], []
+        loss_total = 0.0
+        N = 0.0
 
         with torch.no_grad():
             for batch in test_loader:
                 xb = batch['input_fields']
                 yb = batch['output_fields']
                 f = model(xb)
-                loss_total += loss_func(f, yb).item() * xb.size(0)
+                loss_batch = loss_func(f, yb)
+                #
+                loss_total += loss_batch.item() * xb.size(0)
                 N += xb.size(0)
-                y_true.append(yb)
-                y_pred.append(f)
 
-        y_true = torch.cat(y_true).squeeze().numpy()
-        y_pred = torch.cat(y_pred).squeeze().numpy()
-        return loss_total/N, y_true, y_pred
+        return loss_total / N
     #======================================
-    
+
+
     print('Beginning test run ...')
-    loss_test, y_true, y_pred = test()
+    loss_test = test()
 
     #===================
     if plotting == True:
@@ -340,18 +343,7 @@ def TVT_MHD(
         plt.yscale('log')
         plt.legend()
         plt.savefig(base_path / f'{model_name}_loss.png')
-      
-        # Parity Plot (predicted test data vs true test labels):
-        plt.figure()
-        plt.title(f'{model_name} Parity Plot')
-        plt.xlabel("Labels y")
-        plt.ylabel("Test Prediction ŷ")
-        plt.scatter(y_true, y_pred, s=2, alpha=0.15)
-        mn, mx = min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())
-        plt.plot([mn, mx], [mn, mx], color='black')
-        plt.savefig(base_path / f'{model_name}_parity.png')
         #============================================
-    
 
     return float(loss_test)
 #==========================================================================================================================
