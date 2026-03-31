@@ -27,27 +27,52 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 #   of concatenated data sets in DATA INITIALIZATION s.t. 
 #   baseline NN and symmetry-enforcing NN both are given the same 
 #   qty of data
-train_orig_divisor = 100
-train_aug_divisor = 5 * train_orig_divisor 
-valid_divisor = 10
-test_divisor = 10
+TRAIN_ORIG_DIVISOR = 100
+TRAIN_AUG_DIVISOR = 5 * TRAIN_ORIG_DIVISOR 
+VALID_DIVISOR = 10
+TEST_DIVISOR = 10
 
 # Batch settings:
-train_batch_size = 4
-valid_batch_size = 2
-test_batch_size = 2
+TRAIN_BATCH_SIZE = 4
+VALID_BATCH_SIZE = 2
+TEST_BATCH_SIZE = 2
 
 # Model architecture settings:
-spatial_kernel_size = 3
-temporal_kernel_size = 3
-hidden_channels = 4
-activation = nn.LeakyReLU()
+SPATIAL_KERNEL_SIZE = 3
+TEMPORAL_KERNEL_SIZE = 3
+HIDDEN_CHANNELS = 4
+ACTIVATION = nn.LeakyReLU()
+
+# Additional model architecture settings:
+INPUT_CHANNELS = 7
+OUTPUT_CHANNELS = 7
+SPATIAL_DOWN_STRIDE = 2
+SPATIAL_LOWRES_STRIDE = 1
+SPATIAL_UP_KERNEL_SIZE = 4
+SPATIAL_UP_STRIDE = 2
+SPATIAL_UP_PADDING = 1
+TEMPORAL_STRIDE = 1
+DEFAULT_ACTIVATION = nn.ReLU()
+
+# Data settings:
+DATASET_NAME = "MHD_64"
+DATA_SPLITS = ["train", "valid", "test"]
+N_STEPS_INPUT = 4
+N_STEPS_OUTPUT = 1
+USE_NORMALIZATION = False
 
 # Optimizer settings:
-learning_rate = 1e-3
-loss_func = nn.MSELoss()
-epochs = 15
-delta_threshold = 1e-2
+LEARNING_RATE = 1e-3
+LOSS_FUNC = nn.MSELoss()
+EPOCHS = 15
+DELTA_THRESHOLD = 1e-2
+
+# DataLoader settings:
+TRAIN_SHUFFLE = True
+EVAL_SHUFFLE = False
+
+# Plotting settings:
+PLOTTING = True
 #==================
 
 
@@ -56,24 +81,24 @@ delta_threshold = 1e-2
 # Both architectures:
 architecture_config = {
     # DataLoader settings:
-    "train_batch_size": train_batch_size,
-    "valid_batch_size": valid_batch_size,
-    "test_batch_size": test_batch_size,
-    "train_shuffle": True,
-    "eval_shuffle": False,
+    "train_batch_size": TRAIN_BATCH_SIZE,
+    "valid_batch_size": VALID_BATCH_SIZE,
+    "test_batch_size": TEST_BATCH_SIZE,
+    "train_shuffle": TRAIN_SHUFFLE,
+    "eval_shuffle": EVAL_SHUFFLE,
 
     # Model architecture settings:
-    "spatial_kernel_size": spatial_kernel_size,
-    "temporal_kernel_size": temporal_kernel_size,
-    "hidden_channels": hidden_channels,
-    "activation": activation,
+    "spatial_kernel_size": SPATIAL_KERNEL_SIZE,
+    "temporal_kernel_size": TEMPORAL_KERNEL_SIZE,
+    "hidden_channels": HIDDEN_CHANNELS,
+    "activation": ACTIVATION,
 
     # Optimizer / training settings:
-    "learning_rate": learning_rate,
-    "loss_func": loss_func,
-    "epochs": epochs,
-    "delta_threshold": delta_threshold,
-    "plotting": True,
+    "learning_rate": LEARNING_RATE,
+    "loss_func": LOSS_FUNC,
+    "epochs": EPOCHS,
+    "delta_threshold": DELTA_THRESHOLD,
+    "plotting": PLOTTING,
 }
 #--------------------
 
@@ -109,12 +134,12 @@ baseline_MHD_config = {
 project_dir = Path(__file__).resolve().parent.parent
 base_path = project_dir / "datasets"
 
-for split in ["train", "valid", "test"]:
-    split_dir = base_path / "MHD_64" / "data" / split
+for split in DATA_SPLITS:
+    split_dir = base_path / DATASET_NAME / "data" / split
     if not split_dir.exists():
         well_download(
             base_path = str(base_path),
-            dataset = "MHD_64",
+            dataset = DATASET_NAME,
             split = split,
         )
 #=========================
@@ -123,14 +148,14 @@ for split in ["train", "valid", "test"]:
 #========================================
 # Splitting data into train, valid, test:
 datasets = {} # initializing dictionary
-for split in ["train", "valid", "test"]:
+for split in DATA_SPLITS:
     datasets[split] = WellDataset( # generating key-value pairs
         well_base_path = str(base_path),
-        well_dataset_name = "MHD_64",
+        well_dataset_name = DATASET_NAME,
         well_split_name = split,
-        n_steps_input = 4,
-        n_steps_output = 1,
-        use_normalization = False,
+        n_steps_input = N_STEPS_INPUT,
+        n_steps_output = N_STEPS_OUTPUT,
+        use_normalization = USE_NORMALIZATION,
     )
 #=================================
 
@@ -162,24 +187,24 @@ def dataset_generator():
     # Combining train augmentations:
     train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
     N_train_aug = len(train_aug)
-    indices = torch.randperm(N_train_aug)[:(N_train_aug // train_aug_divisor)]
+    indices = torch.randperm(N_train_aug)[:(N_train_aug // TRAIN_AUG_DIVISOR)]
     train_aug = Subset(train_aug, indices)
 
     # Train data for baseline:
     N_train_orig = len(train_orig)
-    indices = torch.randperm(N_train_orig)[:(N_train_orig // train_orig_divisor)]
+    indices = torch.randperm(N_train_orig)[:(N_train_orig // TRAIN_ORIG_DIVISOR)]
     train_orig = Subset(train_orig, indices)
 
     # Validation data:
     valid_orig = datasets["valid"]
     N_valid = len(valid_orig)
-    indices = torch.randperm(N_valid)[:(N_valid // valid_divisor)]
+    indices = torch.randperm(N_valid)[:(N_valid // VALID_DIVISOR)]
     valid_orig = Subset(valid_orig, indices)
 
     # Test data:
     test_orig = datasets["test"]
     N_test = len(test_orig)
-    indices = torch.randperm(N_test)[:(N_test // test_divisor)]
+    indices = torch.randperm(N_test)[:(N_test // TEST_DIVISOR)]
     test_orig = Subset(test_orig, indices)
 
 
@@ -220,15 +245,15 @@ class SpatioTemporalCNN(nn.Module):
     #============
     def __init__(
         self,
-        spatial_kernel_size: int = 3,
-        temporal_kernel_size: int = 3,
-        hidden_channels: int = 16,
+        spatial_kernel_size: int = SPATIAL_KERNEL_SIZE,
+        temporal_kernel_size: int = TEMPORAL_KERNEL_SIZE,
+        hidden_channels: int = HIDDEN_CHANNELS,
         activation: nn.Module | None = None,
     ):
         super().__init__()
 
         if activation is None:
-            activation = nn.ReLU()
+            activation = DEFAULT_ACTIVATION
         self.act = activation
 
         spatial_padding = spatial_kernel_size // 2
@@ -240,10 +265,10 @@ class SpatioTemporalCNN(nn.Module):
         # -> [N*T, hidden_channels, 32, 32, 32]
         # -----------------------------
         self.spatial_down = nn.Conv3d(
-            in_channels = 7,
+            in_channels = INPUT_CHANNELS,
             out_channels = hidden_channels,
             kernel_size = spatial_kernel_size,
-            stride = 2,
+            stride = SPATIAL_DOWN_STRIDE,
             padding = spatial_padding,
         )
 
@@ -252,7 +277,7 @@ class SpatioTemporalCNN(nn.Module):
             in_channels = hidden_channels,
             out_channels = hidden_channels,
             kernel_size = spatial_kernel_size,
-            stride = 1,
+            stride = SPATIAL_LOWRES_STRIDE,
             padding = spatial_padding,
         )
 
@@ -267,7 +292,7 @@ class SpatioTemporalCNN(nn.Module):
             in_channels = hidden_channels,
             out_channels = hidden_channels,
             kernel_size = temporal_kernel_size,
-            stride = 1,
+            stride = TEMPORAL_STRIDE,
             padding = temporal_padding,
         )
 
@@ -279,16 +304,16 @@ class SpatioTemporalCNN(nn.Module):
         self.spatial_up = nn.ConvTranspose3d(
             in_channels = hidden_channels,
             out_channels = hidden_channels,
-            kernel_size = 4,
-            stride = 2,
-            padding = 1,
+            kernel_size = SPATIAL_UP_KERNEL_SIZE,
+            stride = SPATIAL_UP_STRIDE,
+            padding = SPATIAL_UP_PADDING,
         )
 
         self.spatial_out = nn.Conv3d(
             in_channels = hidden_channels,
-            out_channels = 7,
+            out_channels = OUTPUT_CHANNELS,
             kernel_size = spatial_kernel_size,
-            stride = 1,
+            stride = SPATIAL_LOWRES_STRIDE,
             padding = spatial_padding,
         )
     #=====================
@@ -307,9 +332,9 @@ class SpatioTemporalCNN(nn.Module):
             raise ValueError(
                 f"Expected input of shape [N, T, X, Y, Z, 7], got {tuple(X.shape)}"
             )
-        if X.shape[-1] != 7:
+        if X.shape[-1] != INPUT_CHANNELS:
             raise ValueError(
-                f"Expected last dimension to have size 7, got {X.shape[-1]}"
+                f"Expected last dimension to have size {INPUT_CHANNELS}, got {X.shape[-1]}"
             )
 
         N, T, Xdim, Ydim, Zdim, C = X.shape
