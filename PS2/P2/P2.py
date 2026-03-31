@@ -52,6 +52,7 @@ delta_threshold = 1e-2
 
 
 #====================
+#--------------------
 # Both architectures:
 architecture_config = {
     # DataLoader settings:
@@ -74,10 +75,9 @@ architecture_config = {
     "delta_threshold": delta_threshold,
     "plotting": True,
 }
-#================================
+#--------------------
 
-
-#======================
+#----------------------
 symmetry_MHD_config = {
     **architecture_config,
     "model_name": "Symmetry MHD",
@@ -86,8 +86,13 @@ baseline_MHD_config = {
     **architecture_config,
     "model_name": "Baseline MHD",
 }
-#=================================
+#--------------------------------
+#================================
 #=============================================================================================================================
+
+
+
+
 
 
 
@@ -130,52 +135,58 @@ for split in ["train", "valid", "test"]:
 #=================================
 
 
-#===================
-# Data augmentation:
-train_orig = datasets["train"]
-train_mag = Augmentation(train_orig, transform=b_parity)
-train_z180 = Augmentation(
-    train_orig,
-    transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=2)
-)
-train_x90 = Augmentation(
-    train_orig,
-    transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
-)
-train_y270 = Augmentation(
-    train_orig,
-    transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=3)
-)
-#=================================================================================
+#=======================
+def dataset_generator():
+    """
+    Augments data, and takes subsets of the datasets.
+    """
+    # Data augmentation:
+    train_orig = datasets["train"]
+    train_mag = Augmentation(train_orig, transform=b_parity)
+    train_z180 = Augmentation(
+        train_orig,
+        transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=2)
+    )
+    train_x90 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
+    )
+    train_y270 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=3)
+    )
+    #=================================================================================
 
 
-#===============================
-# Combining train augmentations:
-train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
-N_train_aug = len(train_aug)
-indices = torch.randperm(N_train_aug)[:(N_train_aug // train_aug_divisor)]
-train_aug = Subset(train_aug, indices)
+    #===============================
+    # Combining train augmentations:
+    train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
+    N_train_aug = len(train_aug)
+    indices = torch.randperm(N_train_aug)[:(N_train_aug // train_aug_divisor)]
+    train_aug = Subset(train_aug, indices)
 
-# Train data for baseline:
-N_train_orig = len(train_orig)
-indices = torch.randperm(N_train_orig)[:(N_train_orig // train_orig_divisor)]
-train_orig = Subset(train_orig, indices)
+    # Train data for baseline:
+    N_train_orig = len(train_orig)
+    indices = torch.randperm(N_train_orig)[:(N_train_orig // train_orig_divisor)]
+    train_orig = Subset(train_orig, indices)
 
-# Validation data:
-valid_orig = datasets["valid"]
-N_valid = len(valid_orig)
-indices = torch.randperm(N_valid)[:(N_valid // valid_divisor)]
-valid_orig = Subset(valid_orig, indices)
+    # Validation data:
+    valid_orig = datasets["valid"]
+    N_valid = len(valid_orig)
+    indices = torch.randperm(N_valid)[:(N_valid // valid_divisor)]
+    valid_orig = Subset(valid_orig, indices)
 
-# Test data:
-test_orig = datasets["test"]
-N_test = len(test_orig)
-indices = torch.randperm(N_test)[:(N_test // test_divisor)]
-test_orig = Subset(test_orig, indices)
+    # Test data:
+    test_orig = datasets["test"]
+    N_test = len(test_orig)
+    indices = torch.randperm(N_test)[:(N_test // test_divisor)]
+    test_orig = Subset(test_orig, indices)
 
-print("Data augmentation complete ...")
-#======================================
-#======================================
+
+    print("Data augmentation complete ...")
+    return train_orig, train_aug, valid_orig, test_orig
+    #==================================================
+#======================================================
 #=============================================================================================================================
 
 
@@ -422,6 +433,9 @@ def symmetry_MHD(
         activation = activation,
     )
 
+    _, train_aug, valid_orig, test_orig = dataset_generator()
+
+
     return TVT_MHD(
         model = model,
         model_name = model_name,
@@ -482,6 +496,9 @@ def baseline_MHD(
         hidden_channels = hidden_channels,
         activation = activation,
     )
+
+    train_orig, _, valid_orig, test_orig = dataset_generator()
+
 
     return TVT_MHD(
         model = model,
