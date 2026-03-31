@@ -66,10 +66,20 @@ TVT_MHD (TVT.py): Train, validate, test function, same as TVT_MLP but
         tensor is equivariant under this transformation.
 
                                 Part 2
-(a) The rotational symmetry and magnetic field parity are enforced via
+(a) 
+(b) The rotational symmetry and magnetic field parity are enforced via
         augmented data, while the translational symmetry are enforced 
         by the neural network being a CNN.
+
+                                Part 3
+(a) Done.
 (b)
+(c) Both models were run with the same model, therefore translational
+        symmetry was enforced for both baseline and symmetry architectures.
+        This comparison then exposes the advantages brought by data
+        augmentation. The exact same parameters were used in the spatial-
+        temporal CNN, and the exact same amount of training, validation,
+        and test data was used for both architectures.
 
 
 

@@ -28,12 +28,12 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 #   baseline NN and symmetry-enforcing NN both are given the same 
 #   qty of data
 TRAIN_ORIG_DIVISOR = 100
-TRAIN_AUG_DIVISOR = 5 * TRAIN_ORIG_DIVISOR 
+TRAIN_AUG_DIVISOR = 13 * TRAIN_ORIG_DIVISOR 
 VALID_DIVISOR = 10
 TEST_DIVISOR = 10
 
 # Batch settings:
-TRAIN_BATCH_SIZE = 4
+TRAIN_BATCH_SIZE = 2
 VALID_BATCH_SIZE = 2
 TEST_BATCH_SIZE = 2
 
@@ -64,7 +64,7 @@ USE_NORMALIZATION = False
 # Optimizer settings:
 LEARNING_RATE = 1e-3
 LOSS_FUNC = nn.MSELoss()
-EPOCHS = 15
+EPOCHS = 5
 DELTA_THRESHOLD = 1e-2
 
 # DataLoader settings:
@@ -168,13 +168,37 @@ def dataset_generator():
     # Data augmentation:
     train_orig = datasets["train"]
     train_mag = Augmentation(train_orig, transform=b_parity)
+    train_z90 = Augmentation(
+        train_orig,
+        transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=1)
+    )
     train_z180 = Augmentation(
         train_orig,
         transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=2)
     )
+    train_z270 = Augmentation(
+        train_orig,
+        transform = lambda sample: rotation_symmetry(sample, axis_rot="z", num_90_rot=3)
+    )
     train_x90 = Augmentation(
         train_orig,
         transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=1)
+    )
+    train_x180 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=2)
+    )
+    train_x270 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="x", num_90_rot=3)
+    )
+    train_y90 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=1)
+    )
+    train_y180 = Augmentation(
+        train_orig,
+        transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=2)
     )
     train_y270 = Augmentation(
         train_orig,
@@ -185,7 +209,21 @@ def dataset_generator():
 
     #===============================
     # Combining train augmentations:
-    train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
+    train_aug = ConcatDataset([
+        train_orig, 
+        train_mag, 
+        train_mag, # B-field parity re-introduced for strength
+        train_mag, 
+        train_z90, 
+        train_z180,
+        train_z270,
+        train_x90,
+        train_x180,
+        train_x270, 
+        train_y90,
+        train_y180,
+        train_y270
+        ])
     N_train_aug = len(train_aug)
     indices = torch.randperm(N_train_aug)[:(N_train_aug // TRAIN_AUG_DIVISOR)]
     train_aug = Subset(train_aug, indices)
@@ -558,9 +596,8 @@ def baseline_MHD(
 #=========================
 if __name__ == "__main__":
     symmetry_results = symmetry_MHD(**symmetry_MHD_config)
-    print(symmetry_results)
-
     baseline_results = baseline_MHD(**baseline_MHD_config)
-    print(baseline_results)
-#==========================
+    print(f'Symmetry architecture test loss:{symmetry_results}')
+    print(f'Baseline architecture test loss:{baseline_results}')
+#===============================================================
 #===============================================================================================================================
