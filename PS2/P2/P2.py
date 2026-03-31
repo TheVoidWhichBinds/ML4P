@@ -8,8 +8,9 @@ from TVT import TVT_MHD
 from torch.utils.data import ConcatDataset, Subset
 from .augment import Augmentation, b_parity, rotation_symmetry
 
-# Try group averaging before augmentation and then group averaging
-# plus augmentation
+
+
+
 
 
 
@@ -17,70 +18,79 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 
 
 #============= ADJUSTABLE HYPERPARAMETERS =====================================================================================
-#===============
-# Subset factor:
-train_divisor = 1000
+#================================================================
+# Hyperparameters that both architectures must have identical for
+#   a fair baseline vs symmetry-enforced comparison:
+
+# Subset settings:
+# Multiplication factor of train_aug_divisor should match number 
+#   of concatenated data sets in DATA INITIALIZATION s.t. 
+#   baseline NN and symmetry-enforcing NN both are given the same 
+#   qty of data
+train_orig_divisor = 100
+train_aug_divisor = 5 * train_orig_divisor 
 valid_divisor = 10
 test_divisor = 10
-#===============
+
+# Batch settings:
+train_batch_size = 4
+valid_batch_size = 2
+test_batch_size = 2
+
+# Model architecture settings:
+spatial_kernel_size = 3
+temporal_kernel_size = 3
+hidden_channels = 4
+activation = nn.LeakyReLU()
+
+# Optimizer settings:
+learning_rate = 1e-3
+loss_func = nn.MSELoss()
+epochs = 15
+delta_threshold = 1e-2
+#==================
 
 
-#=======================
-# Symmetry architecture:
-symmetry_MHD_config = {
+#====================
+# Both architectures:
+architecture_config = {
     # DataLoader settings:
-    "train_batch_size": 2,
-    "valid_batch_size": 2,
-    "test_batch_size": 2,
+    "train_batch_size": train_batch_size,
+    "valid_batch_size": valid_batch_size,
+    "test_batch_size": test_batch_size,
     "train_shuffle": True,
     "eval_shuffle": False,
 
     # Model architecture settings:
-    "spatial_kernel_size": 3,
-    "temporal_kernel_size": 3,
-    "hidden_channels": 4,
-    "activation": nn.LeakyReLU(),
+    "spatial_kernel_size": spatial_kernel_size,
+    "temporal_kernel_size": temporal_kernel_size,
+    "hidden_channels": hidden_channels,
+    "activation": activation,
 
     # Optimizer / training settings:
-    "learning_rate": 1e-3,
-    "loss_func": nn.MSELoss(),
-    "epochs": 10,
-    "delta_threshold": 1e-2,
+    "learning_rate": learning_rate,
+    "loss_func": loss_func,
+    "epochs": epochs,
+    "delta_threshold": delta_threshold,
     "plotting": True,
-
-    # Naming:
-    "model_name": "Symmetry MHD",
 }
 #================================
 
 
 #======================
+symmetry_MHD_config = {
+    **architecture_config,
+    "model_name": "Symmetry MHD",
+}
 baseline_MHD_config = {
-    # DataLoader settings:
-    "train_batch_size": 2,
-    "valid_batch_size": 2,
-    "test_batch_size": 2,
-    "train_shuffle": True,
-    "eval_shuffle": False,
-
-    # Model architecture settings:
-    "spatial_kernel_size": 3,
-    "temporal_kernel_size": 3,
-    "hidden_channels": 4,
-    "activation": nn.LeakyReLU(),
-
-    # Optimizer / training settings:
-    "learning_rate": 1e-3,
-    "loss_func": nn.MSELoss(),
-    "epochs": 10,
-    "delta_threshold": 1e-2,
-    "plotting": True,
-
-    # Naming:
+    **architecture_config,
     "model_name": "Baseline MHD",
 }
 #=================================
 #=============================================================================================================================
+
+
+
 
 
 
@@ -121,7 +131,6 @@ for split in ["train", "valid", "test"]:
 
 
 #===================
-#-------------------
 # Data augmentation:
 train_orig = datasets["train"]
 train_mag = Augmentation(train_orig, transform=b_parity)
@@ -137,33 +146,35 @@ train_y270 = Augmentation(
     train_orig,
     transform=lambda sample: rotation_symmetry(sample, axis_rot="y", num_90_rot=3)
 )
-#---------------------------------------------------------------------------------
+#=================================================================================
 
 
-#-------------------------------
+#===============================
 # Combining train augmentations:
 train_aug = ConcatDataset([train_orig, train_mag, train_z180, train_x90, train_y270])
-N_train = len(train_aug)
-train_subset = N_train // train_divisor
-indices = torch.randperm(N_train)[:train_subset]
+N_train_aug = len(train_aug)
+indices = torch.randperm(N_train_aug)[:(N_train_aug // train_aug_divisor)]
 train_aug = Subset(train_aug, indices)
+
+# Train data for baseline:
+N_train_orig = len(train_orig)
+indices = torch.randperm(N_train_orig)[:(N_train_orig // train_orig_divisor)]
+train_orig = Subset(train_orig, indices)
 
 # Validation data:
 valid_orig = datasets["valid"]
 N_valid = len(valid_orig)
-valid_subset = N_valid // valid_divisor
-indices = torch.randperm(N_valid)[:valid_subset]
+indices = torch.randperm(N_valid)[:(N_valid // valid_divisor)]
 valid_orig = Subset(valid_orig, indices)
 
 # Test data:
 test_orig = datasets["test"]
 N_test = len(test_orig)
-test_subset = N_test // test_divisor
-indices = torch.randperm(N_test)[:test_subset]
+indices = torch.randperm(N_test)[:(N_test // test_divisor)]
 test_orig = Subset(test_orig, indices)
 
 print("Data augmentation complete ...")
-#--------------------------------------
+#======================================
 #======================================
 #=============================================================================================================================
 
