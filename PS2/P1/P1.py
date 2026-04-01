@@ -14,13 +14,35 @@ from TVT import TVT_MLP
 
 
 
+#============= HYPERPARAMETERS =======================================================================================================
+epochs = 100
+delta_threshold = 1e-4
+learning_rate = 1e-3
+batch_fractions = [0.25, 0.25, 0.25] # Fraction of total train, validate, and testing (respectively) data per batch
+dim_hidden = [128, 64, 28] # nodes in each hidden layer
+seed = 12 # seed for batch shuffling
+activation = nn.LeakyReLU() 
+#=====================================================================================================================================
+
+
+
+
+
+
+
+
+
+
 #================ TOY FUNCTIONS ====================================================================================================
+#==========================================================================================
 def toy_labels(f: Callable[[torch.Tensor], torch.Tensor], x: torch.Tensor) -> torch.Tensor:
     """
     Generates the labels y_dataset based on the function of choice
     """
     return f(x)
+#==============
 
+#===========================================
 def cosine(x: torch.Tensor) -> torch.Tensor:
     return torch.cos(x)
 
@@ -32,6 +54,7 @@ def poly(x: torch.Tensor) -> torch.Tensor:
 
 def exp_fn(x: torch.Tensor) -> torch.Tensor:
     return torch.exp(x**2)
+#=========================
 #===================================================================================================================================
 
 
@@ -75,25 +98,6 @@ x_test  = x_dataset[I_test]
 y_train = y_dataset[I_train]
 y_valid = y_dataset[I_valid]
 y_test  = y_dataset[I_test]
-#=====================================================================================================================================
-
-
-
-
-
-
-
-
-
-
-#============= HYPERPARAMETERS =======================================================================================================
-epochs = 100
-delta_threshold = 1e-4
-learning_rate = 1e-3
-batch_fractions = [0.25, 0.25, 0.25] # Fraction of total train, validate, and testing (respectively) data per batch
-dim_hidden = [128, 64, 28] # nodes in each hidden layer
-seed = 12 # seed for batch shuffling
-activation = nn.LeakyReLU() 
 #=====================================================================================================================================
 
 

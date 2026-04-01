@@ -4,7 +4,7 @@ from the_well.utils.download import well_download
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch
-from TVT import TVT_MHD
+from ..TVT import TVT_MHD
 from torch.utils.data import ConcatDataset, Subset
 from .augment import Augmentation, b_parity, rotation_symmetry
 
@@ -19,16 +19,12 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 
 #============= ADJUSTABLE HYPERPARAMETERS =====================================================================================
 #================================================================
-# Hyperparameters that both architectures must have identical for
-#   a fair baseline vs symmetry-enforced comparison:
-
-# Subset settings:
 # Multiplication factor of train_aug_divisor should match number 
 #   of concatenated data sets in DATA INITIALIZATION s.t. 
 #   baseline NN and symmetry-enforcing NN both are given the same 
 #   qty of data
 TRAIN_ORIG_DIVISOR = 100
-TRAIN_AUG_DIVISOR = 13 * TRAIN_ORIG_DIVISOR 
+TRAIN_AUG_DIVISOR = 12 * TRAIN_ORIG_DIVISOR 
 VALID_DIVISOR = 10
 TEST_DIVISOR = 10
 
@@ -64,7 +60,7 @@ USE_NORMALIZATION = False
 # Optimizer settings:
 LEARNING_RATE = 1e-3
 LOSS_FUNC = nn.MSELoss()
-EPOCHS = 5
+EPOCHS = 20
 DELTA_THRESHOLD = 1e-2
 
 # DataLoader settings:
@@ -161,9 +157,34 @@ for split in DATA_SPLITS:
 
 
 #=======================
-def dataset_generator():
+def heldout_generator():
     """
-    Augments data, and takes subsets of the datasets.
+    Generates shared validation and test subsets so that both
+    architectures are evaluated on identical held-out data.
+    """
+    # Validation data:
+    valid_orig = datasets["valid"]
+    N_valid = len(valid_orig)
+    valid_indices = torch.randperm(N_valid)[:(N_valid // VALID_DIVISOR)]
+    valid_orig = Subset(valid_orig, valid_indices)
+
+    # Test data:
+    test_orig = datasets["test"]
+    N_test = len(test_orig)
+    test_indices = torch.randperm(N_test)[:(N_test // TEST_DIVISOR)]
+    test_orig = Subset(test_orig, test_indices)
+
+    print("Shared validation and test data prepared ...")
+    return valid_orig, test_orig
+#======================================================
+
+
+#=======================
+def train_generator():
+    """
+    Augments training data, and takes subsets of the train datasets.
+    Validation and test are generated separately so they can be shared
+    between both architectures.
     """
     # Data augmentation:
     train_orig = datasets["train"]
@@ -213,7 +234,6 @@ def dataset_generator():
         train_orig, 
         train_mag, 
         train_mag, # B-field parity re-introduced for strength
-        train_mag, 
         train_z90, 
         train_z180,
         train_z270,
@@ -233,22 +253,9 @@ def dataset_generator():
     indices = torch.randperm(N_train_orig)[:(N_train_orig // TRAIN_ORIG_DIVISOR)]
     train_orig = Subset(train_orig, indices)
 
-    # Validation data:
-    valid_orig = datasets["valid"]
-    N_valid = len(valid_orig)
-    indices = torch.randperm(N_valid)[:(N_valid // VALID_DIVISOR)]
-    valid_orig = Subset(valid_orig, indices)
-
-    # Test data:
-    test_orig = datasets["test"]
-    N_test = len(test_orig)
-    indices = torch.randperm(N_test)[:(N_test // TEST_DIVISOR)]
-    test_orig = Subset(test_orig, indices)
-
-
-    print("Data augmentation complete ...")
-    return train_orig, train_aug, valid_orig, test_orig
-    #==================================================
+    print("Training data augmentation complete ...")
+    return train_orig, train_aug
+    #================================
 #======================================================
 #=============================================================================================================================
 
@@ -479,6 +486,8 @@ def symmetry_MHD(
         train_shuffle,
         eval_shuffle,
         plotting: bool,
+        valid_orig,
+        test_orig,
         **kwargs,
     ):
     """
@@ -496,8 +505,7 @@ def symmetry_MHD(
         activation = activation,
     )
 
-    _, train_aug, valid_orig, test_orig = dataset_generator()
-
+    _, train_aug = train_generator()
 
     return TVT_MHD(
         model = model,
@@ -546,6 +554,8 @@ def baseline_MHD(
         train_shuffle,
         eval_shuffle,
         plotting: bool,
+        valid_orig,
+        test_orig,
         **kwargs,
     ):
     """
@@ -560,8 +570,7 @@ def baseline_MHD(
         activation = activation,
     )
 
-    train_orig, _, valid_orig, test_orig = dataset_generator()
-
+    train_orig, _ = train_generator()
 
     return TVT_MHD(
         model = model,
@@ -595,8 +604,19 @@ def baseline_MHD(
 
 #=========================
 if __name__ == "__main__":
-    symmetry_results = symmetry_MHD(**symmetry_MHD_config)
-    baseline_results = baseline_MHD(**baseline_MHD_config)
+    valid_orig, test_orig = heldout_generator()
+
+    symmetry_results = symmetry_MHD(
+        valid_orig = valid_orig,
+        test_orig = test_orig,
+        **symmetry_MHD_config,
+    )
+    baseline_results = baseline_MHD(
+        valid_orig = valid_orig,
+        test_orig = test_orig,
+        **baseline_MHD_config,
+    )
+
     print(f'Symmetry architecture test loss:{symmetry_results}')
     print(f'Baseline architecture test loss:{baseline_results}')
 #===============================================================
