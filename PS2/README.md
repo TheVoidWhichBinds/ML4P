@@ -24,14 +24,17 @@ TVT_MLP (TVT.py): Test, Validate, and Training function for an MLP
 
 #------------------------------ P2.py --------------------------------#
                               Sections
-DATA INITIALIZATION: Data download, number of time-steps per sample, 
-    data augmentation (See Part 1, (b)) with subset of data (shit was
-    too damn big. Run it on a supercomputer if you want).
-MODEL CLASS AND FORWARD FUNCTION: Model was a spatial 3-D CNN then a 
-    temporal 1-D CNN, with activations after each layer. Tensors had 
-    to be modified to be compatible with Conv3d and Conv1d. 
-HYPERPARAMETERS AND RUNNING IT: Calling the model, hyperparameters,
-    and running train, validate, test function.
+ADJUSTABLE HYPERPARAMETERS: All tweakable hyperparameters. See code 
+    comments for each one's meaning.
+DATA INITIALIZATION: Data download, func to hold validation and test
+    data consistent for both architectures, data augmentation 
+    (See Part 1, (b)) with subset of data (shit was too damn big. Run 
+    it on a supercomputer if you want).
+MODEL: Model was a spatial 3-D CNN, with stride to donwsample grid 
+    resolution, then a temporal 1-D CNN, with activations after each 
+    layer, then a resampling back up to the 64^3 grid. Tensors had to 
+    be modified to be compatible with Conv3d and Conv1d. 
+RUNNING IT: Calls architecture functions, prints resulting test loss.
 AUGMENTATION (augment.py): augmentation functions: B-field parity,
     and rotation function that can rotate 90, 180 or 270 degrees about 
     the axis of choice.
@@ -44,8 +47,4 @@ TVT_MHD (TVT.py): Train, validate, test function, same as TVT_MLP but
 
 
 
-
-
-
-LLM Usage: Packaging feature matrices into forms acceptable by Conv3d, Conv1d, 
     
