@@ -41,7 +41,7 @@ AUGMENTATION (augment.py): augmentation functions: B-field parity,
 TVT_MHD (TVT.py): Train, validate, test function, same as TVT_MLP but 
     slightly modified to take in train_aug, valid_orig, test_orig 
     (Dataset objects) and extract their "input_fields" and "output_fields"
-    tensors.
+    tensors. Also, test function replaced by The Well VRMSE metric.
 
 
 

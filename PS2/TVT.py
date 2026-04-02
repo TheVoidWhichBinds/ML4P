@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
+from the_well.benchmark.metrics.spatial import VRMSE
 from pathlib import Path
 project_dir = Path(__file__).resolve().parent
 base_path = project_dir / 'P2'
@@ -195,7 +196,8 @@ def TVT_MHD(
         train_loader,
         valid_loader,
         test_loader,
-        plotting: bool           
+        plotting: bool,
+        test_metadata = None      
         ):
     """
     For CNNs applied to problem 2
@@ -307,29 +309,50 @@ def TVT_MHD(
     def test():
         """
         Takes final weights and biases from train and validation epoch loops
-        and calculates test loss.
+        and calculates test loss and VRMSE.
         """
         print('Beginning test ...')
         model.eval()
         loss_total = 0.0
+        vrmse_total = None
         N = 0.0
+
+        metric = VRMSE()
 
         with torch.no_grad():
             for batch in test_loader:
-                xb = batch['input_fields']
-                yb = batch['output_fields']
+                xb = batch["input_fields"].to(next(model.parameters()).device)
+                yb = batch["output_fields"].to(next(model.parameters()).device)
+
                 f = model(xb)
+
+                # Ordinary MSE loss
                 loss_batch = loss_func(f, yb)
-                #
                 loss_total += loss_batch.item() * xb.size(0)
                 N += xb.size(0)
 
-        return loss_total / N
-    #======================================
+                # VRMSE per field
+                vrmse_batch = metric.eval(f, yb, meta=test_metadata)
+                # shape typically: [batch, n_fields] or [1, n_fields] depending on metric implementation
+
+                # Reduce over batch dimension first
+                vrmse_batch_mean = vrmse_batch.mean(dim=0)
+
+                if vrmse_total is None:
+                    vrmse_total = vrmse_batch_mean * xb.size(0)
+                else:
+                    vrmse_total += vrmse_batch_mean * xb.size(0)
+
+        loss_test = loss_total / N
+        vrmse_mean_fields = vrmse_total / N
+        vrmse_mean_all = vrmse_mean_fields.mean().item()
+
+        return loss_test, vrmse_mean_fields, vrmse_mean_all
+    #=======================================================
 
 
     print('Beginning test run ...')
-    loss_test = test()
+    loss_test, vrmse_fields, vrmse_mean = test()
 
     #===================
     if plotting == True:
@@ -343,7 +366,12 @@ def TVT_MHD(
         plt.yscale('log')
         plt.legend()
         plt.savefig(base_path / f'{model_name}_loss.png')
-        #============================================
+    #====================================================
 
-    return float(loss_test)
+
+    return {
+        "test_loss": float(loss_test),
+        "vrmse_per_field": vrmse_fields.detach().cpu(),
+        "vrmse_mean": float(vrmse_mean),
+    }
 #==========================================================================================================================

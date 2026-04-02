@@ -23,10 +23,10 @@ from .augment import Augmentation, b_parity, rotation_symmetry
 #   of concatenated data sets in DATA INITIALIZATION s.t. 
 #   baseline NN and symmetry-enforcing NN both are given the same 
 #   qty of data
-TRAIN_ORIG_DIVISOR = 80
+TRAIN_ORIG_DIVISOR = 10
 TRAIN_AUG_DIVISOR = 13 * TRAIN_ORIG_DIVISOR 
-VALID_DIVISOR = 10
-TEST_DIVISOR = 10
+VALID_DIVISOR = 1
+TEST_DIVISOR = 1
 
 # Batch settings:
 TRAIN_BATCH_SIZE = 2
@@ -60,7 +60,7 @@ USE_NORMALIZATION = False
 # Optimizer settings:
 LEARNING_RATE = 1e-3
 LOSS_FUNC = nn.MSELoss()
-EPOCHS = 30
+EPOCHS = 10
 DELTA_THRESHOLD = 1e-2
 
 # DataLoader settings:
@@ -534,6 +534,7 @@ def symmetry_MHD(
             shuffle = eval_shuffle,
         ),
         plotting = plotting,
+        test_metadata = test_orig.dataset.metadata,
     )
 #===========================
 
@@ -599,6 +600,7 @@ def baseline_MHD(
             shuffle = eval_shuffle,
         ),
         plotting = plotting,
+        test_metadata = test_orig.dataset.metadata,
     )
 #===========================
 
@@ -618,7 +620,14 @@ if __name__ == "__main__":
         **baseline_MHD_config,
     )
 
-    print(f'Symmetry architecture test loss:{symmetry_results}')
-    print(f'Baseline architecture test loss:{baseline_results}')
-#===============================================================
+    print("\nSymmetry architecture:")
+    print("Test loss:", symmetry_results["test_loss"])
+    print("VRMSE per field:", symmetry_results["vrmse_per_field"])
+    print("Mean VRMSE:", symmetry_results["vrmse_mean"])
+
+    print("\nBaseline architecture:")
+    print("Test loss:", baseline_results["test_loss"])
+    print("VRMSE per field:", baseline_results["vrmse_per_field"])
+    print("Mean VRMSE:", baseline_results["vrmse_mean"])
+#=======================================================
 #===============================================================================================================================
