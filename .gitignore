@@ -8,3 +8,10 @@ data/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+*.hdf5final/well-env/
+
+# Virtual environments
+final/well-env/
+well-env/
+.venv/
+venv/
