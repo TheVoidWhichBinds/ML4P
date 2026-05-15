@@ -1,22 +1,34 @@
 # data.py
 #================================================================================================================================================
-# Data downloader, checker, converter.
+# Data loading and local spatiotemporal patch extraction for turbulent_radiative_layer_2D.
 #================================================================================================================================================
 
-
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from typing import Dict, Generator, List, Optional, Sequence, Tuple, Union
+
 import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
 try:
-    from config import DATASET_PATH
+    from config import (
+        DATASET_PATH,
+        NUM_PHYSICAL_CHANNELS,
+        SPATIAL_KERNEL_SIZE,
+        K_VALUES,
+        X_BOUNDARY_MODE,
+        Y_BOUNDARY_MODE,
+    )
 except ImportError:
     DATASET_PATH = Path(__file__).resolve().parent / "datasets" / "turbulent_radiative_layer_2D" / "data"
-
-
+    NUM_PHYSICAL_CHANNELS = 4
+    SPATIAL_KERNEL_SIZE = 3
+    K_VALUES = [10, 25, 50, 75, 100]
+    X_BOUNDARY_MODE = "periodic"
+    Y_BOUNDARY_MODE = "replicate"
 
 
 
@@ -52,14 +64,23 @@ def get_split_dir(
 ) -> Path:
     dataset_root = get_dataset_root(dataset_path)
 
-    split_dir = dataset_root / split
+    split_options = [split]
 
-    if not split_dir.exists():
-        raise FileNotFoundError(
-            f"Split directory does not exist:\n{split_dir}"
-        )
+    if split == "valid":
+        split_options.append("val")
 
-    return split_dir
+    if split == "val":
+        split_options.append("valid")
+
+    for split_name in split_options:
+        split_dir = dataset_root / split_name
+
+        if split_dir.exists():
+            return split_dir
+
+    raise FileNotFoundError(
+        f"Split directory does not exist for split '{split}' under:\n{dataset_root}"
+    )
 
 
 
@@ -89,8 +110,6 @@ def get_split_files(
         files = files[:max_files]
 
     return files
-
-
 
 
 
@@ -130,8 +149,6 @@ def print_h5_structure(file_path: Union[str, Path]) -> None:
 
     for key, shape in datasets.items():
         print(f"{key}: {shape}")
-
-
 
 
 
@@ -183,6 +200,7 @@ def _to_nt_hw_c(array: np.ndarray) -> np.ndarray:
         N x T x H x W
         N x T x H x W x C
         N x T x C x H x W
+        N x T x H x W x C1 x C2
     """
 
     array = np.asarray(array)
@@ -212,6 +230,37 @@ def _to_nt_hw_c(array: np.ndarray) -> np.ndarray:
             array = np.transpose(array, (0, 1, 3, 4, 2))
             return array
 
+    if array.ndim == 6:
+        if array.shape[-1] <= 32 and array.shape[-2] <= 32:
+            n_traj, n_time, height, width = array.shape[:4]
+            channels = int(np.prod(array.shape[4:]))
+
+            array = array.reshape(
+                n_traj,
+                n_time,
+                height,
+                width,
+                channels,
+            )
+
+            return array
+
+        if array.shape[2] <= 32 and array.shape[-1] <= 32:
+            array = np.transpose(array, (0, 1, 3, 4, 2, 5))
+
+            n_traj, n_time, height, width = array.shape[:4]
+            channels = int(np.prod(array.shape[4:]))
+
+            array = array.reshape(
+                n_traj,
+                n_time,
+                height,
+                width,
+                channels,
+            )
+
+            return array
+
     raise ValueError(
         f"Could not standardize array with shape {array.shape}."
     )
@@ -220,13 +269,116 @@ def _to_nt_hw_c(array: np.ndarray) -> np.ndarray:
 
 
 
+def _field_sort_key(name: str) -> Tuple[int, str]:
+    field_order = {
+        "density": 0,
+        "pressure": 1,
+        "velocity": 2,
+    }
+
+    short_name = name.split("/")[-1]
+
+    return field_order.get(short_name, 100), short_name
+
+
+
+
+
+def _read_field_group(
+    h5_file: h5py.File,
+    group_name: str,
+) -> List[Tuple[str, np.ndarray]]:
+    if group_name not in h5_file:
+        return []
+
+    group = h5_file[group_name]
+
+    if not isinstance(group, h5py.Group):
+        return []
+
+    fields = []
+
+    def visitor(name, obj):
+        if isinstance(obj, h5py.Dataset) and _is_numeric_dataset(obj):
+            arr = np.asarray(obj)
+
+            if arr.ndim >= 3:
+                fields.append((f"{group_name}/{name}", arr))
+
+    group.visititems(visitor)
+
+    fields = sorted(
+        fields,
+        key = lambda item: _field_sort_key(item[0]),
+    )
+
+    return fields
+
+
+
+
+
+def _load_well_state_from_field_groups(h5_file: h5py.File) -> Optional[np.ndarray]:
+    """
+    Load The Well field-group format into one physical state tensor.
+
+    For turbulent_radiative_layer_2D, the physical channels are:
+
+        t0_fields/density      -> scalar channel
+        t0_fields/pressure     -> scalar channel
+        t1_fields/velocity     -> two vector channels
+
+    The returned tensor is:
+
+        N x T x H x W x 4
+    """
+
+    field_groups = [
+        "t0_fields",
+        "t1_fields",
+        "t2_fields",
+    ]
+
+    arrays = []
+    field_names = []
+
+    for group_name in field_groups:
+        for field_name, field_array in _read_field_group(
+            h5_file = h5_file,
+            group_name = group_name,
+        ):
+            standardized = _to_nt_hw_c(field_array)
+
+            arrays.append(standardized)
+            field_names.append(field_name)
+
+    if len(arrays) == 0:
+        return None
+
+    reference_shape = arrays[0].shape[:4]
+
+    for field_name, array in zip(field_names, arrays):
+        if array.shape[:4] != reference_shape:
+            raise ValueError(
+                "All field arrays must have matching N x T x H x W dimensions.\n"
+                f"Reference shape: {reference_shape}\n"
+                f"Field {field_name} has shape: {array.shape}"
+            )
+
+    state = np.concatenate(
+        arrays,
+        axis = -1,
+    )
+
+    return state
+
+
+
+
+
 def _choose_best_array(arrays: Dict[str, np.ndarray]) -> Tuple[str, np.ndarray]:
     """
     Select the most likely full state tensor from an HDF5 file.
-
-    Preference:
-        1. Largest numeric array with ndim >= 4
-        2. Largest numeric array with ndim == 3
     """
 
     if len(arrays) == 0:
@@ -239,8 +391,6 @@ def _choose_best_array(arrays: Dict[str, np.ndarray]) -> Tuple[str, np.ndarray]:
     )
 
     return candidates[0]
-
-
 
 
 
@@ -276,8 +426,11 @@ def load_h5_state(
             array = np.asarray(h5_file[key])
 
         else:
-            arrays = _collect_numeric_arrays(h5_file)
-            _, array = _choose_best_array(arrays)
+            array = _load_well_state_from_field_groups(h5_file)
+
+            if array is None:
+                arrays = _collect_numeric_arrays(h5_file)
+                _, array = _choose_best_array(arrays)
 
     array = _to_nt_hw_c(array)
     array = array.astype(dtype, copy = False)
@@ -373,8 +526,6 @@ def load_train_valid_test(
 
 
 
-
-
 #==============================================================================================================
 # NORMALIZATION
 #==============================================================================================================
@@ -426,18 +577,83 @@ class ChannelNormalizer:
 
 
 
+#==============================================================================================================
+# MIXED-BOUNDARY PATCH EXTRACTION
+#==============================================================================================================
+
+def pad_frame_mixed_boundary(
+    frame: np.ndarray,
+    pad: int,
+    x_boundary_mode: str = X_BOUNDARY_MODE,
+    y_boundary_mode: str = Y_BOUNDARY_MODE,
+) -> np.ndarray:
+    """
+    Pad one frame with turbulent_radiative_layer_2D boundary conditions.
+
+    Input:
+        frame: H x W x C
+
+    Boundary handling:
+        x / width axis: periodic wrap
+        y / height axis: replicate, equivalent to zero-gradient at the boundary
+    """
+
+    if pad == 0:
+        return frame
+
+    if frame.ndim != 3:
+        raise ValueError(
+            f"Expected frame with shape H x W x C, got {frame.shape}."
+        )
+
+    if x_boundary_mode != "periodic":
+        raise ValueError(
+            f"Only x_boundary_mode = 'periodic' is currently supported, got {x_boundary_mode}."
+        )
+
+    if y_boundary_mode != "replicate":
+        raise ValueError(
+            f"Only y_boundary_mode = 'replicate' is currently supported, got {y_boundary_mode}."
+        )
+
+    #------------------------------------------------------------------------------------------------------
+    # Width / x direction wraps periodically.
+    #------------------------------------------------------------------------------------------------------
+
+    frame = np.concatenate(
+        [
+            frame[:, -pad:, :],
+            frame,
+            frame[:, :pad, :],
+        ],
+        axis = 1,
+    )
+
+    #------------------------------------------------------------------------------------------------------
+    # Height / y direction uses edge replication for zero-gradient boundary behavior.
+    #------------------------------------------------------------------------------------------------------
+
+    frame = np.pad(
+        frame,
+        pad_width = (
+            (pad, pad),
+            (0, 0),
+            (0, 0),
+        ),
+        mode = "edge",
+    )
+
+    return frame
 
 
-#==============================================================================================================
-# PATCH EXTRACTION
-#==============================================================================================================
+
+
 
 def extract_patch(
     frame: np.ndarray,
     i: int,
     j: int,
-    patch_size: int = 3,
-    padding: str = "edge",
+    patch_size: int = SPATIAL_KERNEL_SIZE,
 ) -> np.ndarray:
     """
     Extract one local patch centered at pixel (i, j).
@@ -454,14 +670,9 @@ def extract_patch(
 
     radius = patch_size // 2
 
-    padded = np.pad(
-        frame,
-        pad_width = (
-            (radius, radius),
-            (radius, radius),
-            (0, 0),
-        ),
-        mode = padding,
+    padded = pad_frame_mixed_boundary(
+        frame = frame,
+        pad = radius,
     )
 
     i_pad = i + radius
@@ -488,19 +699,10 @@ def flatten_patch(patch: np.ndarray) -> np.ndarray:
 
 def iter_patch_pairs(
     states: np.ndarray,
-    patch_size: int = 3,
-    padding: str = "edge",
+    patch_size: int = SPATIAL_KERNEL_SIZE,
 ) -> Generator[Tuple[np.ndarray, np.ndarray, Tuple[int, int, int, int]], None, None]:
     """
     Iterate over all local adjacent-time patch pairs.
-
-    Input:
-        states: N x T x H x W x C
-
-    Yields:
-        patch_t: flattened 3 x 3 x C patch
-        patch_tp1: flattened 3 x 3 x C patch
-        metadata: (trajectory_index, time_index, i, j)
     """
 
     if states.ndim != 5:
@@ -522,7 +724,6 @@ def iter_patch_pairs(
                         i = i,
                         j = j,
                         patch_size = patch_size,
-                        padding = padding,
                     )
 
                     patch_tp1 = extract_patch(
@@ -530,7 +731,6 @@ def iter_patch_pairs(
                         i = i,
                         j = j,
                         patch_size = patch_size,
-                        padding = padding,
                     )
 
                     yield (
@@ -546,8 +746,6 @@ def iter_patch_pairs(
 
 
 
-
-
 #==============================================================================================================
 # TORCH DATASETS
 #==============================================================================================================
@@ -555,14 +753,6 @@ def iter_patch_pairs(
 class TemporalPairDataset(Dataset):
     """
     Dataset of full-state adjacent timestamp pairs.
-
-    Each sample is:
-
-        x_t, x_tp1
-
-    where both are shaped:
-
-        H x W x C
     """
 
     def __init__(self, states: np.ndarray):
@@ -607,21 +797,13 @@ class TemporalPairDataset(Dataset):
 class PatchPairDataset(Dataset):
     """
     Dataset of local patch pairs.
-
-    Each sample is:
-
-        flattened_patch_t, flattened_patch_tp1, metadata
-
-    where each flattened patch has dimension:
-
-        D = patch_size * patch_size * C
     """
 
     def __init__(
         self,
         states: np.ndarray,
-        patch_size: int = 3,
-        padding: str = "edge",
+        patch_size: int = SPATIAL_KERNEL_SIZE,
+        max_samples: Optional[int] = None,
     ):
         if states.ndim != 5:
             raise ValueError(
@@ -630,7 +812,6 @@ class PatchPairDataset(Dataset):
 
         self.states = states
         self.patch_size = patch_size
-        self.padding = padding
 
         self.n_traj, self.n_time, self.height, self.width, self.channels = states.shape
 
@@ -641,6 +822,9 @@ class PatchPairDataset(Dataset):
                 for i in range(self.height):
                     for j in range(self.width):
                         self.indices.append((n, t, i, j))
+
+        if max_samples is not None:
+            self.indices = self.indices[:max_samples]
 
 
 
@@ -664,7 +848,6 @@ class PatchPairDataset(Dataset):
             i = i,
             j = j,
             patch_size = self.patch_size,
-            padding = self.padding,
         )
 
         patch_tp1 = extract_patch(
@@ -672,7 +855,6 @@ class PatchPairDataset(Dataset):
             i = i,
             j = j,
             patch_size = self.patch_size,
-            padding = self.padding,
         )
 
         patch_t = torch.from_numpy(flatten_patch(patch_t)).float()
@@ -686,6 +868,186 @@ class PatchPairDataset(Dataset):
         return patch_t, patch_tp1, metadata
 
 
+
+
+
+
+
+
+#==============================================================================================================
+# MULTI-K TEMPORAL PATCH DATASET
+#==============================================================================================================
+
+class MultiKPatchDataset(Dataset):
+    """
+    Dataset for training one shared InnerK model with several temporal-history lengths.
+
+    Each sample is a dictionary with:
+
+        x_by_k:
+            x_by_k["k_10"], x_by_k["k_25"], ...
+
+            Each value has single-sample shape:
+
+                4 x k x spatial_kernel_size x spatial_kernel_size
+
+        y:
+            Future center-pixel physical state with shape:
+
+                4
+
+        metadata:
+            trajectory_index, time_index, i, j
+    """
+
+    def __init__(
+        self,
+        states: np.ndarray,
+        k_values: Sequence[int] = K_VALUES,
+        patch_size: int = SPATIAL_KERNEL_SIZE,
+        max_samples: Optional[int] = None,
+    ):
+        if states.ndim != 5:
+            raise ValueError(
+                f"Expected states with shape N x T x H x W x C, got {states.shape}."
+            )
+
+        if len(k_values) < 4:
+            raise ValueError(
+                "At least four k values are required to fit p, A, k_shift, and w."
+            )
+
+        self.states = states
+        self.k_values = sorted([int(k) for k in k_values])
+        self.patch_size = patch_size
+
+        self.n_traj, self.n_time, self.height, self.width, self.channels = states.shape
+
+        if self.channels != NUM_PHYSICAL_CHANNELS:
+            raise ValueError(
+                f"Expected {NUM_PHYSICAL_CHANNELS} physical channels, but got {self.channels}."
+            )
+
+        if self.patch_size % 2 == 0:
+            raise ValueError("patch_size must be odd.")
+
+        self.max_k = max(self.k_values)
+
+        if self.max_k >= self.n_time:
+            raise ValueError(
+                f"max(k_values) = {self.max_k} must be smaller than the number of timestamps = {self.n_time}."
+            )
+
+        self.indices = []
+
+        #------------------------------------------------------------------------------------------------------
+        # t is the final input time. The label is t + 1.
+        # Therefore t begins at max_k - 1 and ends at n_time - 2.
+        #------------------------------------------------------------------------------------------------------
+
+        for n in range(self.n_traj):
+            for t in range(self.max_k - 1, self.n_time - 1):
+                for i in range(self.height):
+                    for j in range(self.width):
+                        self.indices.append((n, t, i, j))
+
+        if max_samples is not None:
+            self.indices = self.indices[:max_samples]
+
+
+
+
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+
+
+
+
+    def _extract_history_patch(
+        self,
+        n: int,
+        t: int,
+        i: int,
+        j: int,
+        k: int,
+    ) -> torch.Tensor:
+        #------------------------------------------------------------------------------------------------------
+        # Extract k local patches ending at time t.
+        #
+        # Raw history patch shape:
+        #     k x patch_size x patch_size x 4
+        #
+        # InnerK input sample shape:
+        #     4 x k x patch_size x patch_size
+        #------------------------------------------------------------------------------------------------------
+
+        patches = []
+
+        start_t = t - k + 1
+
+        for tau in range(start_t, t + 1):
+            patch = extract_patch(
+                frame = self.states[n, tau],
+                i = i,
+                j = j,
+                patch_size = self.patch_size,
+            )
+
+            patches.append(patch)
+
+        history_patch = np.stack(
+            patches,
+            axis = 0,
+        )
+
+        history_patch = np.transpose(
+            history_patch,
+            axes = (
+                3,
+                0,
+                1,
+                2,
+            ),
+        )
+
+        return torch.from_numpy(history_patch).float()
+
+
+
+
+
+    def __getitem__(self, index: int):
+        n, t, i, j = self.indices[index]
+
+        x_by_k = {}
+
+        for k in self.k_values:
+            x_by_k[f"k_{k}"] = self._extract_history_patch(
+                n = n,
+                t = t,
+                i = i,
+                j = j,
+                k = k,
+            )
+
+        y = torch.from_numpy(
+            self.states[n, t + 1, i, j, :]
+        ).float()
+
+        metadata = torch.tensor(
+            [n, t, i, j],
+            dtype = torch.long,
+        )
+
+        sample = {
+            "x_by_k": x_by_k,
+            "y": y,
+            "metadata": metadata,
+        }
+
+        return sample
 
 
 
@@ -723,7 +1085,8 @@ if __name__ == "__main__":
 
     dataset = PatchPairDataset(
         states = train,
-        patch_size = 3,
+        patch_size = SPATIAL_KERNEL_SIZE,
+        max_samples = 4,
     )
 
     patch_t, patch_tp1, metadata = dataset[0]
@@ -731,3 +1094,19 @@ if __name__ == "__main__":
     print(f"\nOne flattened patch_t shape: {patch_t.shape}")
     print(f"One flattened patch_tp1 shape: {patch_tp1.shape}")
     print(f"Metadata: {metadata.tolist()}")
+
+    multi_k_dataset = MultiKPatchDataset(
+        states = train,
+        k_values = K_VALUES,
+        patch_size = SPATIAL_KERNEL_SIZE,
+        max_samples = 4,
+    )
+
+    multi_k_sample = multi_k_dataset[0]
+
+    print("\nOne MultiKPatchDataset sample:")
+    for key, value in multi_k_sample["x_by_k"].items():
+        print(f"{key}: {value.shape}")
+
+    print(f"y shape: {multi_k_sample['y'].shape}")
+    print(f"metadata: {multi_k_sample['metadata'].tolist()}")
