@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from config import (
@@ -23,6 +22,7 @@ from config import (
     K_VALUES,
     GRAD_CLIP_MAX_NORM,
     LEARNING_RATE,
+    LOAD_PRETRAINED_INNERK,
     LOG_DIR,
     MAX_FILES,
     MAX_SAMPLES,
@@ -31,6 +31,8 @@ from config import (
     NUM_WORKERS,
     PIN_MEMORY,
     PREDICTION_WEIGHT,
+    PRETRAIN_CHECKPOINT_PATH,
+    PRETRAIN_TEST_CHECKPOINT_PATH,
     RANDOM_SEED,
     SLOPE_K,
     SLOPE_WEIGHT,
@@ -42,6 +44,7 @@ from config import (
     TEST_RUN_NUM_EPOCHS,
     TRAIN_SPLIT,
     VALID_SPLIT,
+    VRMSE_EPS,
     WEIGHT_DECAY,
 )
 from data import MultiKPatchDataset, load_split
@@ -125,13 +128,13 @@ def print_epoch_metrics(
     k_values,
 ):
     print(
-        f"epoch {epoch:04d}/{num_epochs:04d} | {split:>5s} | total MSE {metrics['total_loss']:.6e}",
+        f"epoch {epoch:04d}/{num_epochs:04d} | {split:>5s} | total VRMSE {metrics['total_loss']:.6e}",
         flush = True,
     )
 
     for k in k_values:
         print(
-            f"    k = {k:03d} | MSE {metrics[f'mse_k_{k}']:.6e}",
+            f"    k = {k:03d} | VRMSE {metrics[f'vrmse_k_{k}']:.6e}",
             flush = True,
         )
 
@@ -175,7 +178,7 @@ def print_epoch_progress(
         f"{split:>5s} progress | "
         f"batch {batch_number}/{total_batches} "
         f"({progress_percent:5.1f}%) | "
-        f"batch total MSE {diagnostics['total_loss']:.6e}",
+        f"batch total VRMSE {diagnostics['total_loss']:.6e}",
         flush = True,
     )
 
@@ -221,6 +224,82 @@ def make_loader(
 
 
 
+def compute_vrmse(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    eps: float = VRMSE_EPS,
+) -> torch.Tensor:
+    #------------------------------------------------------------------------------------------------------
+    # VRMSE = sqrt(MSE / Var(target)), averaged over channels.
+    # For the current local model, prediction and target both have shape [B, 4], so the variance is computed
+    # over the batch for each physical channel.
+    #------------------------------------------------------------------------------------------------------
+
+    if prediction.shape != target.shape:
+        raise ValueError(
+            f"prediction and target must have the same shape, but got {prediction.shape} and {target.shape}."
+        )
+
+    channel_dim = target.ndim - 1
+    reduction_dims = tuple(
+        dim
+        for dim in range(target.ndim)
+        if dim != channel_dim
+    )
+
+    mse_by_channel = torch.mean(
+        (prediction - target) ** 2,
+        dim = reduction_dims,
+    )
+
+    variance_by_channel = torch.var(
+        target,
+        dim = reduction_dims,
+        unbiased = False,
+    )
+
+    vrmse_by_channel = torch.sqrt(
+        mse_by_channel / (variance_by_channel + eps)
+    )
+
+    vrmse = torch.mean(vrmse_by_channel)
+
+    return vrmse
+
+
+
+
+
+def load_model_checkpoint(
+    model: InnerK,
+    checkpoint_path: Path,
+):
+    checkpoint_path = Path(checkpoint_path).expanduser().resolve()
+
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"Pretrained InnerK checkpoint not found: {checkpoint_path}. "
+            f"Run pretrain_inner.py first, or pass --no-pretrained to start from scratch."
+        )
+
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location = "cpu",
+    )
+
+    model_state_dict = checkpoint.get(
+        "model_state_dict",
+        checkpoint,
+    )
+
+    model.load_state_dict(model_state_dict)
+
+    print(f"Loaded pretrained InnerK checkpoint: {checkpoint_path}")
+
+
+
+
+
 
 
 
@@ -243,8 +322,8 @@ def compute_multik_loss(
     y = batch["y"]
     assert_finite_tensor("target y", y)
 
-    mse_values = []
-    mse_dict: Dict[int, torch.Tensor] = {}
+    vrmse_values = []
+    vrmse_dict: Dict[int, torch.Tensor] = {}
 
     for k in k_values:
         x_k = batch["x_by_k"][f"k_{k}"]
@@ -253,43 +332,42 @@ def compute_multik_loss(
         y_hat = model(x_k)
         assert_finite_tensor(f"prediction y_hat for k = {k}", y_hat)
 
-        mse_k = F.mse_loss(
-            y_hat,
-            y,
-            reduction = "mean",
+        vrmse_k = compute_vrmse(
+            prediction = y_hat,
+            target = y,
         )
-        assert_finite_tensor(f"MSE for k = {k}", mse_k)
+        assert_finite_tensor(f"VRMSE for k = {k}", vrmse_k)
 
-        mse_values.append(mse_k)
-        mse_dict[k] = mse_k.detach()
+        vrmse_values.append(vrmse_k)
+        vrmse_dict[k] = vrmse_k.detach()
 
-    mse_values = torch.stack(mse_values)
+    vrmse_values = torch.stack(vrmse_values)
 
     #------------------------------------------------------------------------------------------------------
     # Neutralized slope regularization:
     #
-    # The old version called slope_loss_fn(k_values, mse_values), which made the backpropagated loss include
+    # The old version called slope_loss_fn(k_values, loss_values), which made the backpropagated loss include
     # prediction loss, exponential-fit loss, and slope loss. For stability, the optimizer now sees only the
-    # pooled prediction MSE across all k values.
+    # pooled prediction VRMSE across all k values.
     #------------------------------------------------------------------------------------------------------
 
-    prediction_loss = torch.mean(mse_values)
+    prediction_loss = torch.mean(vrmse_values)
     total_loss = prediction_loss
     assert_finite_tensor("total loss", total_loss)
 
     diagnostics = {
         "total_loss": total_loss.detach(),
         "prediction_loss": prediction_loss.detach(),
-        "fit_loss": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "slope_loss": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "slope": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "p": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "A": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "k_shift": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "w": torch.zeros((), device = device, dtype = mse_values.dtype),
-        "mse_by_k": {
+        "fit_loss": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "slope_loss": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "slope": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "p": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "A": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "k_shift": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "w": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        "vrmse_by_k": {
             k: format_float(value)
-            for k, value in mse_dict.items()
+            for k, value in vrmse_dict.items()
         },
     }
 
@@ -336,7 +414,7 @@ def run_epoch(
         "w": 0.0,
     }
 
-    mse_totals = {
+    vrmse_totals = {
         k: 0.0
         for k in k_values
     }
@@ -394,7 +472,7 @@ def run_epoch(
                 totals[key] += format_float(diagnostics[key])
 
             for k in k_values:
-                mse_totals[k] += diagnostics["mse_by_k"][k]
+                vrmse_totals[k] += diagnostics["vrmse_by_k"][k]
 
             num_batches += 1
 
@@ -423,7 +501,7 @@ def run_epoch(
     }
 
     for k in k_values:
-        averaged[f"mse_k_{k}"] = mse_totals[k] / num_batches
+        averaged[f"vrmse_k_{k}"] = vrmse_totals[k] / num_batches
 
     return averaged
 
@@ -441,19 +519,23 @@ def run_epoch(
 def train_inner(
     test_run: bool = False,
     dataset_path: Optional[str] = None,
+    k_values = None,
+    log_path = None,
+    checkpoint_path = None,
+    load_pretrained: Optional[bool] = None,
+    num_epochs_override: Optional[int] = None,
 ):
     torch.manual_seed(RANDOM_SEED)
 
     device = get_device()
 
     dataset_path = Path(dataset_path).expanduser().resolve() if dataset_path is not None else DATASET_PATH
+    k_values = list(K_VALUES) if k_values is None else [int(k) for k in k_values]
 
-    if SLOPE_K not in K_VALUES:
-        raise ValueError(
-            f"SLOPE_K = {SLOPE_K} must be one of K_VALUES = {K_VALUES}."
-        )
+    if len(k_values) == 0:
+        raise ValueError("At least one k value is required.")
 
-    num_epochs = TEST_RUN_NUM_EPOCHS if test_run else NUM_EPOCHS
+    num_epochs = TEST_RUN_NUM_EPOCHS if test_run else (num_epochs_override or NUM_EPOCHS)
     max_files = TEST_RUN_MAX_FILES if test_run else MAX_FILES
     max_trajectories = TEST_RUN_MAX_TRAJECTORIES if test_run else MAX_TRAJECTORIES
     max_samples = TEST_RUN_MAX_SAMPLES if test_run else MAX_SAMPLES
@@ -464,16 +546,16 @@ def train_inner(
 
     print(f"Using device: {device}")
     print(f"Dataset path: {dataset_path}")
-    print(f"K_VALUES: {K_VALUES}")
+    print(f"K_VALUES: {k_values}")
     print(f"Learning rate: {LEARNING_RATE:.1e}")
     print(f"Gradient clipping max norm: {GRAD_CLIP_MAX_NORM:.1e}")
-    print("Slope/fit loss: disabled; optimizing pooled MSE only")
+    print("Slope/fit loss: disabled; optimizing pooled VRMSE only")
     print(f"Test run: {test_run}")
 
     train_loader = make_loader(
         split = TRAIN_SPLIT,
         dataset_path = dataset_path,
-        k_values = K_VALUES,
+        k_values = k_values,
         batch_size = BATCH_SIZE,
         max_files = max_files,
         max_trajectories = max_trajectories,
@@ -484,7 +566,7 @@ def train_inner(
     valid_loader = make_loader(
         split = VALID_SPLIT,
         dataset_path = dataset_path,
-        k_values = K_VALUES,
+        k_values = k_values,
         batch_size = BATCH_SIZE,
         max_files = max_files,
         max_trajectories = max_trajectories,
@@ -496,8 +578,21 @@ def train_inner(
         k = None,
     ).to(device)
 
+    if load_pretrained is None:
+        load_pretrained = LOAD_PRETRAINED_INNERK
+
+    if load_pretrained:
+        pretrained_checkpoint_path = PRETRAIN_TEST_CHECKPOINT_PATH if test_run else PRETRAIN_CHECKPOINT_PATH
+
+        load_model_checkpoint(
+            model = model,
+            checkpoint_path = pretrained_checkpoint_path,
+        )
+
+    active_slope_k = SLOPE_K if SLOPE_K in k_values else k_values[-1]
+
     slope_loss_fn = ExponentialSlopeLoss(
-        k_ref = SLOPE_K,
+        k_ref = active_slope_k,
         fit_weight = EXPONENTIAL_FIT_WEIGHT,
         slope_weight = SLOPE_WEIGHT,
         prediction_weight = PREDICTION_WEIGHT,
@@ -509,15 +604,18 @@ def train_inner(
         weight_decay = WEIGHT_DECAY,
     )
 
-    log_path = LOG_DIR / ("inner_test_run_log.csv" if test_run else "inner_train_log.csv")
-    checkpoint_path = CHECKPOINT_DIR / ("inner_test_run.pt" if test_run else "inner_shared.pt")
+    log_path = Path(log_path) if log_path is not None else LOG_DIR / ("inner_test_run_log.csv" if test_run else "inner_train_log.csv")
+    checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else CHECKPOINT_DIR / ("inner_test_run.pt" if test_run else "inner_shared.pt")
+
+    log_path.parent.mkdir(parents = True, exist_ok = True)
+    checkpoint_path.parent.mkdir(parents = True, exist_ok = True)
 
     fieldnames = [
         "epoch",
         "split",
         "total_loss",
         "prediction_loss",
-    ] + [f"mse_k_{k}" for k in K_VALUES]
+    ] + [f"vrmse_k_{k}" for k in k_values]
 
     with open(log_path, "w", newline = "") as log_file:
         writer = csv.DictWriter(
@@ -537,7 +635,7 @@ def train_inner(
                 model = model,
                 slope_loss_fn = slope_loss_fn,
                 loader = train_loader,
-                k_values = K_VALUES,
+                k_values = k_values,
                 device = device,
                 optimizer = optimizer,
                 max_batches = max_batches,
@@ -552,14 +650,14 @@ def train_inner(
                 num_epochs = num_epochs,
                 split = "train",
                 metrics = train_metrics,
-                k_values = K_VALUES,
+                k_values = k_values,
             )
 
             valid_metrics = run_epoch(
                 model = model,
                 slope_loss_fn = slope_loss_fn,
                 loader = valid_loader,
-                k_values = K_VALUES,
+                k_values = k_values,
                 device = device,
                 optimizer = None,
                 max_batches = max_batches,
@@ -574,7 +672,7 @@ def train_inner(
                 num_epochs = num_epochs,
                 split = "valid",
                 metrics = valid_metrics,
-                k_values = K_VALUES,
+                k_values = k_values,
             )
 
             train_row = {
@@ -591,9 +689,9 @@ def train_inner(
                 "prediction_loss": valid_metrics["prediction_loss"],
             }
 
-            for k in K_VALUES:
-                train_row[f"mse_k_{k}"] = train_metrics[f"mse_k_{k}"]
-                valid_row[f"mse_k_{k}"] = valid_metrics[f"mse_k_{k}"]
+            for k in k_values:
+                train_row[f"vrmse_k_{k}"] = train_metrics[f"vrmse_k_{k}"]
+                valid_row[f"vrmse_k_{k}"] = valid_metrics[f"vrmse_k_{k}"]
 
             writer.writerow(train_row)
             writer.writerow(valid_row)
@@ -604,8 +702,8 @@ def train_inner(
             "model_state_dict": model.state_dict(),
             "slope_loss_state_dict": slope_loss_fn.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "k_values": K_VALUES,
-            "slope_k": SLOPE_K,
+            "k_values": k_values,
+            "slope_k": active_slope_k,
         },
         checkpoint_path,
     )
@@ -633,6 +731,12 @@ def parse_args():
         help = "Optional path to the turbulent_radiative_layer_2D data directory.",
     )
 
+    parser.add_argument(
+        "--no-pretrained",
+        action = "store_true",
+        help = "Start from scratch instead of loading the k = 100 pretraining checkpoint.",
+    )
+
     return parser.parse_args()
 
 
@@ -645,4 +749,5 @@ if __name__ == "__main__":
     train_inner(
         test_run = args.test_run,
         dataset_path = args.dataset_path,
+        load_pretrained = not args.no_pretrained,
     )

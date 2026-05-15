@@ -27,8 +27,8 @@ SPATIAL_KERNEL_SIZE = 3
 X_BOUNDARY_MODE = "periodic"
 Y_BOUNDARY_MODE = "replicate"
 
-K_VALUES = [10, 25, 50, 75, 100]
-SLOPE_K = 10
+K_VALUES = [80, 85, 90, 95, 100]
+SLOPE_K = 80
 
 
 
@@ -41,7 +41,7 @@ SLOPE_K = 10
 # INNER MODEL
 #================================================================================================================================================
 
-TAYLOR_ALPHA = 3
+TAYLOR_ALPHA = 5
 TAYLOR_X0 = 0.0
 
 HIDDEN_CHANNELS = 32
@@ -64,12 +64,13 @@ NUM_EPOCHS = 5
 LEARNING_RATE = 1.0e-7
 WEIGHT_DECAY = 0.0
 GRAD_CLIP_MAX_NORM = 1.0
+VRMSE_EPS = 1.0e-7
 NUM_WORKERS = 0
 PIN_MEMORY = False
 
 # Number of within-epoch progress checkpoints to print for each train/validation pass.
 # For example, 4 prints around 25%, 50%, 75%, and 100%.
-EPOCH_PROGRESS_DIVISIONS = 0
+EPOCH_PROGRESS_DIVISIONS = 4
 
 PREDICTION_WEIGHT = 1.0
 EXPONENTIAL_FIT_WEIGHT = 1.0e-1
@@ -77,13 +78,33 @@ SLOPE_WEIGHT = 0.0
 
 MAX_FILES = None
 MAX_TRAJECTORIES = 1
-MAX_SAMPLES = 64
+MAX_SAMPLES = 10000
 
 TRAIN_SPLIT = "train"
 VALID_SPLIT = "valid"
 TEST_SPLIT = "test"
 
 RANDOM_SEED = 1234
+
+
+
+
+
+
+
+
+#================================================================================================================================================
+# K = 100 PRETRAINING / WARM START
+#================================================================================================================================================
+
+PRETRAIN_K = 100
+PRETRAIN_NUM_EPOCHS = NUM_EPOCHS
+LOAD_PRETRAINED_INNERK = True
+PRETRAIN_CHECKPOINT_PATH = CHECKPOINT_DIR / "inner_k100_pretrain.pt"
+PRETRAIN_TEST_CHECKPOINT_PATH = CHECKPOINT_DIR / "inner_k100_pretrain_test.pt"
+PRETRAIN_LOG_PATH = LOG_DIR / "inner_k100_pretrain_log.csv"
+PRETRAIN_TEST_LOG_PATH = LOG_DIR / "inner_k100_pretrain_test_log.csv"
+
 
 
 

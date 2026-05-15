@@ -4,7 +4,7 @@
 #================================================================================================================================================
 
 import math
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -265,7 +265,7 @@ class InnerK(nn.Module):
 
 
 #==============================================================================================================
-# EXPONENTIAL MSE-CURVE SLOPE LOSS
+# EXPONENTIAL VRMSE-CURVE SLOPE LOSS
 #==============================================================================================================
 
 class ExponentialSlopeLoss(nn.Module):
@@ -327,13 +327,13 @@ class ExponentialSlopeLoss(nn.Module):
         k_values,
     ):
         #------------------------------------------------------------------------------------------------------
-        # Evaluate the fitted exponential MSE curve at the supplied k values.
+        # Evaluate the fitted exponential VRMSE curve at the supplied k values.
         #------------------------------------------------------------------------------------------------------
 
         p, A, k_shift, w = self.get_curve_parameters()
 
-        curve_values = p + A * torch.exp(
-            -1.0 * w * (k_values - k_shift)
+        curve_values = np.exp(p) + np.exp(A)* torch.exp(
+            -1.0 * np.exp(w) * (k_values - k_shift)
         )
 
         return curve_values
@@ -369,17 +369,17 @@ class ExponentialSlopeLoss(nn.Module):
     def forward(
         self,
         k_values,
-        mse_values,
+        vrmse_values,
     ):
         #------------------------------------------------------------------------------------------------------
         # Inputs:
         #
         #     k_values:   [num_k]
-        #     mse_values: [num_k]
+        #     vrmse_values: [num_k]
         #
         # Total loss:
         #
-        #     pooled MSE over all k values
+        #     pooled VRMSE over all k values
         #     + differentiable exponential-curve fit loss
         #     + slope regularization evaluated only at SLOPE_K / k_ref
         #------------------------------------------------------------------------------------------------------
@@ -389,15 +389,15 @@ class ExponentialSlopeLoss(nn.Module):
                 f"Expected k_values with shape [num_k], but got {k_values.shape}."
             )
 
-        if mse_values.ndim != 1:
+        if vrmse_values.ndim != 1:
             raise ValueError(
-                f"Expected mse_values with shape [num_k], but got {mse_values.shape}."
+                f"Expected vrmse_values with shape [num_k], but got {vrmse_values.shape}."
             )
 
-        if k_values.shape[0] != mse_values.shape[0]:
+        if k_values.shape[0] != vrmse_values.shape[0]:
             raise ValueError(
-                f"k_values and mse_values must have the same length, but got "
-                f"{k_values.shape[0]} and {mse_values.shape[0]}."
+                f"k_values and vrmse_values must have the same length, but got "
+                f"{k_values.shape[0]} and {vrmse_values.shape[0]}."
             )
 
         if k_values.shape[0] < 4:
@@ -406,14 +406,14 @@ class ExponentialSlopeLoss(nn.Module):
             )
 
         k_values = k_values.to(
-            device = mse_values.device,
-            dtype = mse_values.dtype,
+            device = vrmse_values.device,
+            dtype = vrmse_values.dtype,
         )
 
         k_ref = torch.tensor(
             self.k_ref,
-            device = mse_values.device,
-            dtype = mse_values.dtype,
+            device = vrmse_values.device,
+            dtype = vrmse_values.dtype,
         )
 
         reference_mask = torch.isclose(
@@ -426,14 +426,14 @@ class ExponentialSlopeLoss(nn.Module):
                 f"k_ref = {self.k_ref} must appear in k_values."
             )
 
-        prediction_loss = torch.mean(mse_values)
+        prediction_loss = torch.mean(vrmse_values)
 
         curve_values = self.exponential_curve(
             k_values = k_values,
         )
 
         fit_loss = torch.mean(
-            torch.abs(mse_values - curve_values)
+            torch.abs(vrmse_values - curve_values)
         )
 
         slope = self.exponential_slope(

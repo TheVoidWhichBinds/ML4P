@@ -37,16 +37,16 @@ DEFAULT_TEST_LOG_PATH = LOG_DIR / "inner_test_run_log.csv"
 
 def parse_k_values_from_log_columns(columns):
     #------------------------------------------------------------------------------------------------------
-    # Extract k values from columns named mse_k_10, mse_k_25, ... .
+    # Extract k values from columns named vrmse_k_10, vrmse_k_25, ... .
     #------------------------------------------------------------------------------------------------------
 
     parsed_k_values = []
 
     for column in columns:
-        if not column.startswith("mse_k_"):
+        if not column.startswith("vrmse_k_"):
             continue
 
-        k_string = column.replace("mse_k_", "")
+        k_string = column.replace("vrmse_k_", "")
 
         try:
             parsed_k_values.append(int(k_string))
@@ -149,46 +149,46 @@ def load_log(log_path, split):
 
 
 
-def build_epoch_mse_table(split_df, k_values):
+def build_epoch_vrmse_table(split_df, k_values):
     #------------------------------------------------------------------------------------------------------
     # Convert wide log columns into one row per epoch and one column per k.
     #------------------------------------------------------------------------------------------------------
 
-    mse_columns = [f"mse_k_{k}" for k in k_values]
-    missing_columns = [column for column in mse_columns if column not in split_df.columns]
+    vrmse_columns = [f"vrmse_k_{k}" for k in k_values]
+    missing_columns = [column for column in vrmse_columns if column not in split_df.columns]
 
     if missing_columns:
-        raise ValueError(f"Log file is missing MSE columns: {missing_columns}")
+        raise ValueError(f"Log file is missing VRMSE columns: {missing_columns}")
 
-    mse_df = split_df[["epoch"] + mse_columns].copy()
+    vrmse_df = split_df[["epoch"] + vrmse_columns].copy()
 
-    for column in mse_columns:
-        mse_df[column] = pd.to_numeric(mse_df[column], errors = "coerce")
+    for column in vrmse_columns:
+        vrmse_df[column] = pd.to_numeric(vrmse_df[column], errors = "coerce")
 
-    return mse_df
+    return vrmse_df
 
 
 
-def ensure_epoch_zero(mse_df):
+def ensure_epoch_zero(vrmse_df):
     #------------------------------------------------------------------------------------------------------
     # Ensure an epoch-0 row exists for plotting.
     # If the log does not contain epoch 0, the earliest available row is copied and relabeled as epoch 0.
     # This is useful because the first logged training loss is the untrained-model baseline in the current run.
     #------------------------------------------------------------------------------------------------------
 
-    mse_df = mse_df.copy()
+    vrmse_df = vrmse_df.copy()
 
-    if 0 in mse_df["epoch"].astype(int).tolist():
-        return mse_df, False
+    if 0 in vrmse_df["epoch"].astype(int).tolist():
+        return vrmse_df, False
 
-    earliest_epoch = int(mse_df["epoch"].min())
-    epoch_zero_row = mse_df[mse_df["epoch"] == earliest_epoch].iloc[[0]].copy()
+    earliest_epoch = int(vrmse_df["epoch"].min())
+    epoch_zero_row = vrmse_df[vrmse_df["epoch"] == earliest_epoch].iloc[[0]].copy()
     epoch_zero_row["epoch"] = 0
 
-    mse_df = pd.concat([epoch_zero_row, mse_df], ignore_index = True)
-    mse_df = mse_df.sort_values("epoch").reset_index(drop = True)
+    vrmse_df = pd.concat([epoch_zero_row, vrmse_df], ignore_index = True)
+    vrmse_df = vrmse_df.sort_values("epoch").reset_index(drop = True)
 
-    return mse_df, True
+    return vrmse_df, True
 
 
 
@@ -201,7 +201,7 @@ def ensure_epoch_zero(mse_df):
 # PLOTTING
 #================================================================================================================================================
 
-def plot_mse_curves(
+def plot_vrmse_curves(
     log_path,
     split,
     divisions,
@@ -209,7 +209,7 @@ def plot_mse_curves(
     use_log_y,
 ):
     #------------------------------------------------------------------------------------------------------
-    # Plot MSE(k) curves for selected epochs.
+    # Plot VRMSE(k) curves for selected epochs.
     #------------------------------------------------------------------------------------------------------
 
     split_df = load_log(
@@ -222,21 +222,21 @@ def plot_mse_curves(
     if len(k_values) == 0:
         k_values = list(K_VALUES)
 
-    mse_df = build_epoch_mse_table(
+    vrmse_df = build_epoch_vrmse_table(
         split_df = split_df,
         k_values = k_values,
     )
 
-    mse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
-        mse_df = mse_df,
+    vrmse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
+        vrmse_df = vrmse_df,
     )
 
     selected_epochs, stride = choose_epoch_subset(
-        epochs = mse_df["epoch"].tolist(),
+        epochs = vrmse_df["epoch"].tolist(),
         divisions = divisions,
     )
 
-    selected_df = mse_df[mse_df["epoch"].isin(selected_epochs)].copy()
+    selected_df = vrmse_df[vrmse_df["epoch"].isin(selected_epochs)].copy()
 
     output_path = Path(output_path).expanduser().resolve()
     output_path.parent.mkdir(parents = True, exist_ok = True)
@@ -245,7 +245,7 @@ def plot_mse_curves(
 
     for index, (_, row) in enumerate(selected_df.iterrows()):
         epoch = int(row["epoch"])
-        mse_values = [row[f"mse_k_{k}"] for k in k_values]
+        vrmse_values = [row[f"vrmse_k_{k}"] for k in k_values]
         alpha = opacity_for_index(
             index = index,
             count = len(selected_df),
@@ -253,14 +253,14 @@ def plot_mse_curves(
 
         plt.scatter(
             k_values,
-            mse_values,
+            vrmse_values,
             alpha = alpha,
             label = f"epoch {epoch}",
         )
 
     plt.xlabel("k")
-    plt.ylabel("MSE")
-    plt.title(f"MSE vs. temporal history length k ({split}, scatter by epoch)")
+    plt.ylabel("VRMSE")
+    plt.title(f"VRMSE vs. temporal history length k ({split}, scatter by epoch)")
 
     if use_log_y:
         plt.yscale("log")
@@ -297,18 +297,18 @@ def plot_epoch_zero_vs_final(
     if len(k_values) == 0:
         k_values = list(K_VALUES)
 
-    mse_df = build_epoch_mse_table(
+    vrmse_df = build_epoch_vrmse_table(
         split_df = split_df,
         k_values = k_values,
     )
 
-    mse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
-        mse_df = mse_df,
+    vrmse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
+        vrmse_df = vrmse_df,
     )
 
-    final_epoch = int(mse_df["epoch"].max())
+    final_epoch = int(vrmse_df["epoch"].max())
     comparison_epochs = [0, final_epoch]
-    comparison_df = mse_df[mse_df["epoch"].isin(comparison_epochs)].copy()
+    comparison_df = vrmse_df[vrmse_df["epoch"].isin(comparison_epochs)].copy()
 
     output_path = Path(output_path).expanduser().resolve()
     output_path.parent.mkdir(parents = True, exist_ok = True)
@@ -317,19 +317,19 @@ def plot_epoch_zero_vs_final(
 
     for _, row in comparison_df.iterrows():
         epoch = int(row["epoch"])
-        mse_values = [row[f"mse_k_{k}"] for k in k_values]
+        vrmse_values = [row[f"vrmse_k_{k}"] for k in k_values]
 
         plt.plot(
             k_values,
-            mse_values,
+            vrmse_values,
             marker = "o",
             linewidth = 1.5,
             label = f"epoch {epoch}",
         )
 
     plt.xlabel("k")
-    plt.ylabel("MSE")
-    plt.title(f"Epoch 0 vs. final epoch MSE ({split})")
+    plt.ylabel("VRMSE")
+    plt.title(f"Epoch 0 vs. final epoch VRMSE ({split})")
 
     if use_log_y:
         plt.yscale("log")
@@ -388,14 +388,14 @@ def parse_args():
     parser.add_argument(
         "--output-path",
         type = str,
-        default = str(PLOT_DIR / "mse_vs_k_by_epoch.png"),
+        default = str(PLOT_DIR / "vrmse_vs_k_by_epoch.png"),
         help = "Where to save the scatter-by-epoch plot.",
     )
 
     parser.add_argument(
         "--comparison-output-path",
         type = str,
-        default = str(PLOT_DIR / "mse_vs_k_epoch0_vs_final.png"),
+        default = str(PLOT_DIR / "vrmse_vs_k_epoch0_vs_final.png"),
         help = "Where to save the epoch-0-versus-final connected-line plot.",
     )
 
@@ -416,7 +416,7 @@ def main():
 
     log_path = DEFAULT_TEST_LOG_PATH if args.test_log else args.log_path
 
-    output_path, selected_epochs, stride, used_synthetic_epoch_zero = plot_mse_curves(
+    output_path, selected_epochs, stride, used_synthetic_epoch_zero = plot_vrmse_curves(
         log_path = log_path,
         split = args.split,
         divisions = args.divisions,

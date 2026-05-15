@@ -912,9 +912,9 @@ class MultiKPatchDataset(Dataset):
                 f"Expected states with shape N x T x H x W x C, got {states.shape}."
             )
 
-        if len(k_values) < 4:
+        if len(k_values) < 1:
             raise ValueError(
-                "At least four k values are required to fit p, A, k_shift, and w."
+                "At least one k value is required."
             )
 
         self.states = states
