@@ -1,6 +1,6 @@
 # model.py
 #================================================================================================================================================
-# CNN-only inner model for local spatiotemporal prediction with variable input timestamp history.
+# CNN-only InnerK model for predicting the next local state from different history lengths.
 #================================================================================================================================================
 
 import math
@@ -39,10 +39,7 @@ class TaylorActivation(nn.Module):
         self.x0 = TAYLOR_X0
         self.clamp_value = float(TAYLOR_CLAMP_VALUE)
 
-        #------------------------------------------------------------------------------------------------------
-        # sigma(z) = sum_{n = 0}^{alpha} theta_n / n! * (z - x0)^n
-        # theta is trainable. theta[1] = 1 initializes the activation near identity when x0 = 0.
-        #------------------------------------------------------------------------------------------------------
+        # This starts the Taylor activation as basically the identity map.
 
         theta = torch.zeros(self.alpha + 1)
         theta[1] = 1.0
@@ -59,18 +56,11 @@ class TaylorActivation(nn.Module):
 
 
     def forward(self, x):
-        #------------------------------------------------------------------------------------------------------
-        # Elementwise Taylor-series activation. Shape is unchanged.
-        #------------------------------------------------------------------------------------------------------
+        # Apply the Taylor activation without changing the tensor shape.
 
         out = torch.zeros_like(x)
 
-        #------------------------------------------------------------------------------------------------------
-        # Clamp before forming powers. Without this, large but finite convolution features can overflow in
-        # shifted_x ** power. Even when theta[power] is initialized to zero, PyTorch can still evaluate
-        # 0 * inf as NaN. The clamp therefore preserves finite forward passes while keeping theta shared and
-        # trainable.
-        #------------------------------------------------------------------------------------------------------
+        # Clamp this so big convolution values do not blow up the Taylor powers.
 
         shifted_x = torch.clamp(
             x - self.x0,
@@ -110,10 +100,7 @@ class InnerK(nn.Module):
     """
 
     def _validate_input(self, x):
-        #------------------------------------------------------------------------------------------------------
-        # Expected input: [B, 4, k, s, s], where s = spatial_kernel_size.
-        # If self.k is None, the model accepts any k in self.k_values.
-        #------------------------------------------------------------------------------------------------------
+        # Check that the input is [batch, channels, time, height, width].
 
         if x.ndim != 5:
             raise ValueError(
@@ -153,10 +140,7 @@ class InnerK(nn.Module):
 
 
     def _time_after_feature_extractor(self, k_value):
-        #------------------------------------------------------------------------------------------------------
-        # The first Conv3d uses no temporal padding, so k -> k - temporal_kernel_size + 1.
-        # Later Conv3d layers use same-style temporal padding and preserve that reduced time length.
-        #------------------------------------------------------------------------------------------------------
+        # The first convolution shrinks time once; the later ones keep that new length.
 
         return int(k_value) - self.temporal_kernel_size + 1
 
@@ -190,9 +174,7 @@ class InnerK(nn.Module):
             self.k_values.append(self.k)
             self.k_values = sorted(set(self.k_values))
 
-        #------------------------------------------------------------------------------------------------------
-        # Basic checks
-        #------------------------------------------------------------------------------------------------------
+        # Basic checks before building the model.
 
         if self.num_cnn_layers < 1:
             raise ValueError(
@@ -222,18 +204,7 @@ class InnerK(nn.Module):
 
         temporal_padding = self.temporal_kernel_size // 2
 
-        #------------------------------------------------------------------------------------------------------
-        # Shared CNN feature extractor:
-        #
-        #     [B, 4, k, s, s]
-        #         -> Conv3d + TaylorActivation
-        #     [B, hidden_channels, k_out, 1, 1]
-        #         -> temporal Conv3d + TaylorActivation blocks
-        #     [B, hidden_channels, k_out, 1, 1]
-        #
-        # The first kernel spans the full local spatial patch. Later kernels keep the spatial size at 1 x 1
-        # and continue mixing through the remaining temporal feature dimension.
-        #------------------------------------------------------------------------------------------------------
+        # Build the shared CNN that mixes channels, the 3x3 patch, and the time history.
 
         feature_layers = [
             nn.Conv3d(
@@ -272,18 +243,7 @@ class InnerK(nn.Module):
 
         self.feature_extractor = nn.Sequential(*feature_layers)
 
-        #------------------------------------------------------------------------------------------------------
-        # Learned final Conv3d collapse heads:
-        #
-        #     [B, hidden_channels, k_out, 1, 1]
-        #         -> k-specific final Conv3d
-        #     [B, 4, 1, 1, 1]
-        #         -> squeeze
-        #     [B, 4]
-        #
-        # This is the CNN-only replacement for temporal pooling + MLP. It learns how to weight every remaining
-        # temporal feature and hidden channel instead of averaging them.
-        #------------------------------------------------------------------------------------------------------
+        # Build one final collapse head per k, since each k leaves a different time length.
 
         self.heads = nn.ModuleDict()
 
@@ -311,17 +271,7 @@ class InnerK(nn.Module):
 
 
     def forward(self, x):
-        #------------------------------------------------------------------------------------------------------
-        # Full model:
-        #
-        #     [B, 4, k, s, s]
-        #         -> shared CNN feature extractor with Taylor nonlinearities
-        #     [B, hidden_channels, k_out, 1, 1]
-        #         -> learned k-specific Conv3d collapse head
-        #     [B, 4, 1, 1, 1]
-        #         -> squeeze
-        #     [B, 4]
-        #------------------------------------------------------------------------------------------------------
+        # Run the patch through the shared CNN, then the matching k-specific output head.
 
         self._validate_input(x)
 
@@ -389,14 +339,7 @@ class ExponentialSlopeLoss(nn.Module):
         k_shift,
         raw_w,
     ):
-        #------------------------------------------------------------------------------------------------------
-        # Evaluate:
-        #
-        #     E(k) = p + A exp(-w (k - k_shift))
-        #
-        # p, A, and w are made positive through exp. These are temporary fit variables, not trainable model
-        # parameters. The exponent is clamped only to avoid numerical overflow during the inner curve fit.
-        #------------------------------------------------------------------------------------------------------
+        # Evaluate the fitted exponential curve without letting the exponent explode.
 
         p = torch.exp(raw_p) + self.eps
         A = torch.exp(raw_A) + self.eps
@@ -421,12 +364,7 @@ class ExponentialSlopeLoss(nn.Module):
         k_values,
         vrmse_values,
     ):
-        #------------------------------------------------------------------------------------------------------
-        # Initialize the temporary curve-fit variables from the current VRMSE(k) scale.
-        #
-        # The initialization is detached because these values are only starting guesses for the inner fit. The
-        # fitted parameters still depend on the current VRMSE values through the differentiable fit iterations.
-        #------------------------------------------------------------------------------------------------------
+        # Start the temporary curve fit from the current VRMSE scale.
 
         dtype = vrmse_values.dtype
         device = vrmse_values.device
@@ -475,13 +413,7 @@ class ExponentialSlopeLoss(nn.Module):
         k_values,
         vrmse_values,
     ):
-        #------------------------------------------------------------------------------------------------------
-        # Refit p, A, k_shift, and w from the current VRMSE(k) values.
-        #
-        # This fit is used only to compute the exponential slope term. The fit error is not added to the
-        # training loss. The manual gradient-descent steps are differentiable during training, so the final
-        # slope term can still backpropagate to the CNN through the VRMSE values.
-        #------------------------------------------------------------------------------------------------------
+        # Refit the exponential curve so the slope loss follows the current VRMSE(k) values.
 
         k_values = k_values.to(
             device = vrmse_values.device,
@@ -547,13 +479,7 @@ class ExponentialSlopeLoss(nn.Module):
         k_shift,
         w,
     ):
-        #------------------------------------------------------------------------------------------------------
-        # Evaluate dE/dk for:
-        #
-        #     E(k) = p + A exp(-w (k - k_shift))
-        #
-        #     dE/dk = -A w exp(-w (k - k_shift))
-        #------------------------------------------------------------------------------------------------------
+        # Compute the exponential slope at the selected k value.
 
         exponent = torch.clamp(
             -1.0 * w * (k_value - k_shift),
@@ -574,20 +500,7 @@ class ExponentialSlopeLoss(nn.Module):
         k_values,
         vrmse_values,
     ):
-        #------------------------------------------------------------------------------------------------------
-        # Inputs:
-        #
-        #     k_values:     [num_k]
-        #     vrmse_values: [num_k]
-        #
-        # Total loss:
-        #
-        #     pooled VRMSE over all k values
-        #     + exponential slope regularization evaluated only at SLOPE_K / k_ref
-        #
-        # The exponential parameters are refit from the current VRMSE(k) values. They are not nn.Parameters and
-        # they are not included in the optimizer.
-        #------------------------------------------------------------------------------------------------------
+        # Combine the pooled prediction error with the exponential slope penalty.
 
         if k_values.ndim != 1:
             raise ValueError(

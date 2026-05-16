@@ -1,6 +1,6 @@
 # data.py
 #================================================================================================================================================
-# Data loading and local spatiotemporal patch extraction for turbulent_radiative_layer_2D.
+# Loads the WELL data and grabs local space-time patches.
 #================================================================================================================================================
 
 from __future__ import annotations
@@ -616,9 +616,7 @@ def pad_frame_mixed_boundary(
             f"Only y_boundary_mode = 'replicate' is currently supported, got {y_boundary_mode}."
         )
 
-    #------------------------------------------------------------------------------------------------------
-    # Width / x direction wraps periodically.
-    #------------------------------------------------------------------------------------------------------
+    # Wrap x because that direction is periodic.
 
     frame = np.concatenate(
         [
@@ -629,9 +627,7 @@ def pad_frame_mixed_boundary(
         axis = 1,
     )
 
-    #------------------------------------------------------------------------------------------------------
-    # Height / y direction uses edge replication for zero-gradient boundary behavior.
-    #------------------------------------------------------------------------------------------------------
+    # Copy the y edges because that matches the zero-gradient boundary.
 
     frame = np.pad(
         frame,
@@ -940,10 +936,7 @@ class MultiKPatchDataset(Dataset):
 
         self.indices = []
 
-        #------------------------------------------------------------------------------------------------------
-        # t is the final input time. The label is t + 1.
-        # Therefore t begins at max_k - 1 and ends at n_time - 2.
-        #------------------------------------------------------------------------------------------------------
+        # t is the last input time, so the label is the next timestamp.
 
         for n in range(self.n_traj):
             for t in range(self.max_k - 1, self.n_time - 1):
@@ -973,15 +966,7 @@ class MultiKPatchDataset(Dataset):
         j: int,
         k: int,
     ) -> torch.Tensor:
-        #------------------------------------------------------------------------------------------------------
-        # Extract k local patches ending at time t.
-        #
-        # Raw history patch shape:
-        #     k x patch_size x patch_size x 4
-        #
-        # InnerK input sample shape:
-        #     4 x k x patch_size x patch_size
-        #------------------------------------------------------------------------------------------------------
+        # Grab the k-frame local patch history and put channels first for InnerK.
 
         patches = []
 

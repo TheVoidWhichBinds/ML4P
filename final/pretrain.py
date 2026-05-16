@@ -1,6 +1,6 @@
 # pretrain.py
 #================================================================================================================================================
-# First training stage after data generation: train InnerK only at PRETRAIN_K before the multi-k run.
+# Trains InnerK at PRETRAIN_K first so the multi-k run has a warm start.
 #================================================================================================================================================
 
 from __future__ import annotations
@@ -35,9 +35,7 @@ def make_pretrain_paths(
     log_path = None,
     checkpoint_path = None,
 ):
-    #------------------------------------------------------------------------------------------------------
-    # Pretraining paths are controlled by config.py.
-    #------------------------------------------------------------------------------------------------------
+    # Use the pretraining paths from config.py.
 
     if log_path is None:
         log_path = PRETRAIN_TEST_LOG_PATH if test_run else PRETRAIN_LOG_PATH

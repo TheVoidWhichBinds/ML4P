@@ -1,6 +1,6 @@
 # test.py
 #================================================================================================================================================
-# Evaluate the final InnerK checkpoint on the held-out test split and save VRMSE metrics plus parity data.
+# Tests the final InnerK checkpoint and saves VRMSE plus parity data.
 #================================================================================================================================================
 
 from __future__ import annotations

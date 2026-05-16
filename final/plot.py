@@ -70,9 +70,7 @@ def parse_float(value):
 
 
 def parse_k_values_from_log_columns(columns):
-    #------------------------------------------------------------------------------------------------------
-    # Extract k values from columns named vrmse_k_10, vrmse_k_25, ... .
-    #------------------------------------------------------------------------------------------------------
+    # Pull k values out of columns like vrmse_k_10, vrmse_k_25, and so on.
 
     parsed_k_values = []
 
@@ -96,9 +94,7 @@ def parse_k_values_from_log_columns(columns):
 
 
 def load_log_rows(log_path, split):
-    #------------------------------------------------------------------------------------------------------
-    # Load the CSV log and keep only the requested split.
-    #------------------------------------------------------------------------------------------------------
+    # Load the log and keep the split we actually want.
 
     rows, fieldnames = read_csv_rows(log_path)
 
@@ -133,10 +129,7 @@ def load_log_rows(log_path, split):
 
 
 def choose_evenly_spaced_epochs(epochs, n_epochs):
-    #------------------------------------------------------------------------------------------------------
-    # Choose n evenly spaced epochs from the epochs present in the saved log.
-    # The final epoch is always included.
-    #------------------------------------------------------------------------------------------------------
+    # Pick evenly spaced epochs, but always keep the final one.
 
     if n_epochs <= 0:
         raise ValueError("n_epochs must be a positive integer.")
@@ -183,9 +176,7 @@ def choose_evenly_spaced_epochs(epochs, n_epochs):
 
 
 def opacity_for_index(index, count, minimum_opacity = 0.25, maximum_opacity = 1.0):
-    #------------------------------------------------------------------------------------------------------
-    # Make later epoch curves more opaque.
-    #------------------------------------------------------------------------------------------------------
+    # Make later epochs easier to see.
 
     if count <= 1:
         return maximum_opacity
@@ -228,9 +219,7 @@ def plot_vrmse_curves(
     output_path,
     use_log_y,
 ):
-    #------------------------------------------------------------------------------------------------------
-    # Plot VRMSE(k) curves for n evenly spaced epochs from the saved log.
-    #------------------------------------------------------------------------------------------------------
+    # Plot VRMSE against k for the selected saved epochs.
 
     split_rows, fieldnames = load_log_rows(
         log_path = log_path,
@@ -308,10 +297,7 @@ def plot_epoch_first_vs_final(
     output_path,
     use_log_y,
 ):
-    #------------------------------------------------------------------------------------------------------
-    # Plot the first saved epoch and the final saved epoch, with lines connecting the k values within each
-    # epoch.
-    #------------------------------------------------------------------------------------------------------
+    # Plot the first and final saved epochs with lines connecting the k values.
 
     split_rows, fieldnames = load_log_rows(
         log_path = log_path,
@@ -425,9 +411,7 @@ def plot_parity(
     channel = None,
     max_points = PARITY_PLOT_MAX_POINTS,
 ):
-    #------------------------------------------------------------------------------------------------------
-    # Plot prediction vs. target from the parity CSV produced by test.py.
-    #------------------------------------------------------------------------------------------------------
+    # Plot predictions against targets using the parity CSV from test.py.
 
     targets, predictions = load_parity_points(
         parity_path = parity_path,

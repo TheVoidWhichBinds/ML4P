@@ -1,6 +1,6 @@
 # run.py
 #================================================================================================================================================
-# Train one shared InnerK model over several temporal-history values k.
+# Trains one shared InnerK model across several history lengths k.
 #================================================================================================================================================
 
 from __future__ import annotations
@@ -241,11 +241,7 @@ def compute_vrmse(
     target: torch.Tensor,
     eps: float = VRMSE_EPS,
 ) -> torch.Tensor:
-    #------------------------------------------------------------------------------------------------------
-    # VRMSE = sqrt(MSE / Var(target)), averaged over channels.
-    # For the current local model, prediction and target both have shape [B, 4], so the variance is computed
-    # over the batch for each physical channel.
-    #------------------------------------------------------------------------------------------------------
+    # VRMSE rescales MSE by the target variance, then averages over channels.
 
     if prediction.shape != target.shape:
         raise ValueError(
@@ -337,10 +333,7 @@ def save_training_checkpoint(
     epoch: int,
     log_path: Path,
 ) -> None:
-    #------------------------------------------------------------------------------------------------------
-    # Save the current learned model parameters, including the TaylorActivation theta values.
-    # This checkpoint is updated after every completed epoch so test.py can load the latest completed state.
-    #------------------------------------------------------------------------------------------------------
+    # Save the latest model checkpoint so test.py can load the most recent finished epoch.
 
     torch.save(
         {
@@ -404,18 +397,7 @@ def compute_multik_loss(
 
     vrmse_values = torch.stack(vrmse_values)
 
-    #------------------------------------------------------------------------------------------------------
-    # Loss selection:
-    #
-    #     slope_loss = False:
-    #         optimize pooled VRMSE only
-    #
-    #     slope_loss = True:
-    #         optimize pooled VRMSE + exponential slope loss
-    #
-    # The exponential curve parameters are refit from the current VRMSE(k) values. They are not trainable
-    # model parameters and are not included in the optimizer.
-    #------------------------------------------------------------------------------------------------------
+    # Pick either pooled VRMSE alone or pooled VRMSE plus the fitted exponential slope loss.
 
     if use_slope_loss:
         k_tensor = torch.tensor(
