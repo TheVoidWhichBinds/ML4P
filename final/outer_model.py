@@ -1,1 +1,0 @@
-# outer_model.py

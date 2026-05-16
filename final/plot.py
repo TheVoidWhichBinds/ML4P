@@ -1,13 +1,19 @@
 # plot.py
 
 import argparse
-import math
+import csv
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import pandas as pd
 
-from config import K_VALUES, LOG_DIR, OUTPUT_DIR
+from config import (
+    K_VALUES,
+    LOG_DIR,
+    N_EPOCHS,
+    OUTPUT_DIR,
+    PARITY_PLOT_MAX_POINTS,
+    TEST_PARITY_PATH,
+)
 
 
 
@@ -22,7 +28,8 @@ from config import K_VALUES, LOG_DIR, OUTPUT_DIR
 
 PLOT_DIR = OUTPUT_DIR / "plots"
 DEFAULT_LOG_PATH = LOG_DIR / "inner_train_log.csv"
-DEFAULT_TEST_LOG_PATH = LOG_DIR / "inner_test_run_log.csv"
+DEFAULT_TEST_RUN_LOG_PATH = LOG_DIR / "inner_test_run_log.csv"
+DEFAULT_TEST_LOG_PATH = LOG_DIR / "inner_test_log.csv"
 
 
 
@@ -32,8 +39,35 @@ DEFAULT_TEST_LOG_PATH = LOG_DIR / "inner_test_run_log.csv"
 
 
 #================================================================================================================================================
-# HELPERS
+# CSV HELPERS
 #================================================================================================================================================
+
+def read_csv_rows(csv_path):
+    csv_path = Path(csv_path).expanduser().resolve()
+
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Could not find CSV file: {csv_path}")
+
+    with open(csv_path, "r", newline = "") as csv_file:
+        reader = csv.DictReader(csv_file)
+        rows = list(reader)
+        fieldnames = reader.fieldnames or []
+
+    return rows, fieldnames
+
+
+
+
+
+def parse_float(value):
+    if value is None or value == "":
+        return float("nan")
+
+    return float(value)
+
+
+
+
 
 def parse_k_values_from_log_columns(columns):
     #------------------------------------------------------------------------------------------------------
@@ -61,39 +95,88 @@ def parse_k_values_from_log_columns(columns):
 
 
 
-def choose_epoch_subset(epochs, divisions):
+def load_log_rows(log_path, split):
     #------------------------------------------------------------------------------------------------------
-    # Choose epochs to plot using stride = total_epochs // divisions.
-    # Epoch 0 is always included when it exists in the log.
+    # Load the CSV log and keep only the requested split.
     #------------------------------------------------------------------------------------------------------
 
-    if divisions <= 0:
-        raise ValueError("divisions must be a positive integer.")
+    rows, fieldnames = read_csv_rows(log_path)
+
+    required_columns = {"epoch", "split"}
+    missing_columns = required_columns.difference(fieldnames)
+
+    if missing_columns:
+        raise ValueError(f"Log file is missing required columns: {sorted(missing_columns)}")
+
+    split_rows = [
+        row
+        for row in rows
+        if row.get("split") == split
+    ]
+
+    if len(split_rows) == 0:
+        available_splits = sorted(set(row.get("split", "") for row in rows))
+        raise ValueError(f"Split '{split}' was not found. Available splits: {available_splits}")
+
+    for row in split_rows:
+        row["epoch"] = int(float(row["epoch"]))
+
+    split_rows = sorted(
+        split_rows,
+        key = lambda row: row["epoch"],
+    )
+
+    return split_rows, fieldnames
+
+
+
+
+
+def choose_evenly_spaced_epochs(epochs, n_epochs):
+    #------------------------------------------------------------------------------------------------------
+    # Choose n evenly spaced epochs from the epochs present in the saved log.
+    # The final epoch is always included.
+    #------------------------------------------------------------------------------------------------------
+
+    if n_epochs <= 0:
+        raise ValueError("n_epochs must be a positive integer.")
 
     epochs = sorted(set(int(epoch) for epoch in epochs))
 
     if len(epochs) == 0:
         raise ValueError("No epochs were found in the log file.")
 
-    minimum_epoch = min(epochs)
-    total_epochs = max(epochs)
-    stride = max(1, total_epochs // divisions)
+    if n_epochs >= len(epochs):
+        return epochs
 
-    selected_epochs = [
-        epoch
-        for epoch in epochs
-        if epoch == minimum_epoch or epoch % stride == 0
-    ]
+    if n_epochs == 1:
+        return [epochs[-1]]
 
-    if 0 in epochs and 0 not in selected_epochs:
-        selected_epochs.append(0)
+    selected_indices = []
+    last_index = len(epochs) - 1
 
-    if len(selected_epochs) == 0 or selected_epochs[-1] != total_epochs:
-        selected_epochs.append(total_epochs)
+    for selection_index in range(n_epochs):
+        fractional_index = selection_index * last_index / (n_epochs - 1)
+        selected_indices.append(round(fractional_index))
+
+    selected_indices = sorted(set(selected_indices))
+
+    while len(selected_indices) < n_epochs:
+        for candidate_index in range(len(epochs)):
+            if candidate_index not in selected_indices:
+                selected_indices.append(candidate_index)
+                break
+
+        selected_indices = sorted(set(selected_indices))
+
+    selected_epochs = [epochs[index] for index in selected_indices]
+
+    if epochs[-1] not in selected_epochs:
+        selected_epochs[-1] = epochs[-1]
 
     selected_epochs = sorted(set(selected_epochs))
 
-    return selected_epochs, stride
+    return selected_epochs
 
 
 
@@ -116,79 +199,16 @@ def opacity_for_index(index, count, minimum_opacity = 0.25, maximum_opacity = 1.
 
 
 
-def load_log(log_path, split):
-    #------------------------------------------------------------------------------------------------------
-    # Load the CSV log and keep only the requested split.
-    #------------------------------------------------------------------------------------------------------
+def downsample_xy(x_values, y_values, max_points):
+    if max_points is None or max_points <= 0:
+        return x_values, y_values
 
-    log_path = Path(log_path).expanduser().resolve()
+    if len(x_values) <= max_points:
+        return x_values, y_values
 
-    if not log_path.exists():
-        raise FileNotFoundError(f"Could not find log file: {log_path}")
+    stride = max(1, len(x_values) // max_points)
 
-    log_df = pd.read_csv(log_path)
-
-    required_columns = {"epoch", "split"}
-    missing_columns = required_columns.difference(log_df.columns)
-
-    if missing_columns:
-        raise ValueError(f"Log file is missing required columns: {sorted(missing_columns)}")
-
-    split_df = log_df[log_df["split"] == split].copy()
-
-    if split_df.empty:
-        available_splits = sorted(log_df["split"].dropna().unique().tolist())
-        raise ValueError(f"Split '{split}' was not found. Available splits: {available_splits}")
-
-    split_df["epoch"] = split_df["epoch"].astype(int)
-    split_df = split_df.sort_values("epoch")
-
-    return split_df
-
-
-
-
-
-def build_epoch_vrmse_table(split_df, k_values):
-    #------------------------------------------------------------------------------------------------------
-    # Convert wide log columns into one row per epoch and one column per k.
-    #------------------------------------------------------------------------------------------------------
-
-    vrmse_columns = [f"vrmse_k_{k}" for k in k_values]
-    missing_columns = [column for column in vrmse_columns if column not in split_df.columns]
-
-    if missing_columns:
-        raise ValueError(f"Log file is missing VRMSE columns: {missing_columns}")
-
-    vrmse_df = split_df[["epoch"] + vrmse_columns].copy()
-
-    for column in vrmse_columns:
-        vrmse_df[column] = pd.to_numeric(vrmse_df[column], errors = "coerce")
-
-    return vrmse_df
-
-
-
-def ensure_epoch_zero(vrmse_df):
-    #------------------------------------------------------------------------------------------------------
-    # Ensure an epoch-0 row exists for plotting.
-    # If the log does not contain epoch 0, the earliest available row is copied and relabeled as epoch 0.
-    # This is useful because the first logged training loss is the untrained-model baseline in the current run.
-    #------------------------------------------------------------------------------------------------------
-
-    vrmse_df = vrmse_df.copy()
-
-    if 0 in vrmse_df["epoch"].astype(int).tolist():
-        return vrmse_df, False
-
-    earliest_epoch = int(vrmse_df["epoch"].min())
-    epoch_zero_row = vrmse_df[vrmse_df["epoch"] == earliest_epoch].iloc[[0]].copy()
-    epoch_zero_row["epoch"] = 0
-
-    vrmse_df = pd.concat([epoch_zero_row, vrmse_df], ignore_index = True)
-    vrmse_df = vrmse_df.sort_values("epoch").reset_index(drop = True)
-
-    return vrmse_df, True
+    return x_values[::stride][:max_points], y_values[::stride][:max_points]
 
 
 
@@ -198,57 +218,61 @@ def ensure_epoch_zero(vrmse_df):
 
 
 #================================================================================================================================================
-# PLOTTING
+# VRMSE PLOTTING
 #================================================================================================================================================
 
 def plot_vrmse_curves(
     log_path,
     split,
-    divisions,
+    n_epochs,
     output_path,
     use_log_y,
 ):
     #------------------------------------------------------------------------------------------------------
-    # Plot VRMSE(k) curves for selected epochs.
+    # Plot VRMSE(k) curves for n evenly spaced epochs from the saved log.
     #------------------------------------------------------------------------------------------------------
 
-    split_df = load_log(
+    split_rows, fieldnames = load_log_rows(
         log_path = log_path,
         split = split,
     )
 
-    k_values = parse_k_values_from_log_columns(split_df.columns)
+    k_values = parse_k_values_from_log_columns(fieldnames)
 
     if len(k_values) == 0:
         k_values = list(K_VALUES)
 
-    vrmse_df = build_epoch_vrmse_table(
-        split_df = split_df,
-        k_values = k_values,
+    missing_columns = [
+        f"vrmse_k_{k}"
+        for k in k_values
+        if f"vrmse_k_{k}" not in fieldnames
+    ]
+
+    if missing_columns:
+        raise ValueError(f"Log file is missing VRMSE columns: {missing_columns}")
+
+    selected_epochs = choose_evenly_spaced_epochs(
+        epochs = [row["epoch"] for row in split_rows],
+        n_epochs = n_epochs,
     )
 
-    vrmse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
-        vrmse_df = vrmse_df,
-    )
-
-    selected_epochs, stride = choose_epoch_subset(
-        epochs = vrmse_df["epoch"].tolist(),
-        divisions = divisions,
-    )
-
-    selected_df = vrmse_df[vrmse_df["epoch"].isin(selected_epochs)].copy()
+    selected_rows = [
+        row
+        for row in split_rows
+        if row["epoch"] in selected_epochs
+    ]
 
     output_path = Path(output_path).expanduser().resolve()
     output_path.parent.mkdir(parents = True, exist_ok = True)
 
     plt.figure(figsize = (8.0, 5.5))
 
-    for index, (_, row) in enumerate(selected_df.iterrows()):
+    for index, row in enumerate(selected_rows):
         epoch = int(row["epoch"])
-        vrmse_values = [row[f"vrmse_k_{k}"] for k in k_values]
+        vrmse_values = [parse_float(row[f"vrmse_k_{k}"]) for k in k_values]
         alpha = opacity_for_index(
             index = index,
-            count = len(selected_df),
+            count = len(selected_rows),
         )
 
         plt.scatter(
@@ -260,64 +284,63 @@ def plot_vrmse_curves(
 
     plt.xlabel("k")
     plt.ylabel("VRMSE")
-    plt.title(f"VRMSE vs. temporal history length k ({split}, scatter by epoch)")
+    plt.title(f"VRMSE vs. temporal history length k ({split})")
 
     if use_log_y:
         plt.yscale("log")
 
     plt.xticks(k_values)
     plt.grid(True, alpha = 0.25)
-    plt.legend(title = f"stride = {stride}")
+    plt.legend(title = f"{len(selected_epochs)} epochs")
     plt.tight_layout()
     plt.savefig(output_path, dpi = 300)
     plt.close()
 
-    return output_path, selected_epochs, stride, used_synthetic_epoch_zero
+    return output_path, selected_epochs
 
 
 
 
-def plot_epoch_zero_vs_final(
+
+def plot_epoch_first_vs_final(
     log_path,
     split,
     output_path,
     use_log_y,
 ):
     #------------------------------------------------------------------------------------------------------
-    # Plot only epoch 0 and the final epoch, with lines connecting the k values within each epoch.
+    # Plot the first saved epoch and the final saved epoch, with lines connecting the k values within each
+    # epoch.
     #------------------------------------------------------------------------------------------------------
 
-    split_df = load_log(
+    split_rows, fieldnames = load_log_rows(
         log_path = log_path,
         split = split,
     )
 
-    k_values = parse_k_values_from_log_columns(split_df.columns)
+    k_values = parse_k_values_from_log_columns(fieldnames)
 
     if len(k_values) == 0:
         k_values = list(K_VALUES)
 
-    vrmse_df = build_epoch_vrmse_table(
-        split_df = split_df,
-        k_values = k_values,
-    )
+    first_epoch = min(row["epoch"] for row in split_rows)
+    final_epoch = max(row["epoch"] for row in split_rows)
+    comparison_epochs = sorted(set([first_epoch, final_epoch]))
 
-    vrmse_df, used_synthetic_epoch_zero = ensure_epoch_zero(
-        vrmse_df = vrmse_df,
-    )
-
-    final_epoch = int(vrmse_df["epoch"].max())
-    comparison_epochs = [0, final_epoch]
-    comparison_df = vrmse_df[vrmse_df["epoch"].isin(comparison_epochs)].copy()
+    comparison_rows = [
+        row
+        for row in split_rows
+        if row["epoch"] in comparison_epochs
+    ]
 
     output_path = Path(output_path).expanduser().resolve()
     output_path.parent.mkdir(parents = True, exist_ok = True)
 
     plt.figure(figsize = (8.0, 5.5))
 
-    for _, row in comparison_df.iterrows():
+    for row in comparison_rows:
         epoch = int(row["epoch"])
-        vrmse_values = [row[f"vrmse_k_{k}"] for k in k_values]
+        vrmse_values = [parse_float(row[f"vrmse_k_{k}"]) for k in k_values]
 
         plt.plot(
             k_values,
@@ -329,7 +352,7 @@ def plot_epoch_zero_vs_final(
 
     plt.xlabel("k")
     plt.ylabel("VRMSE")
-    plt.title(f"Epoch 0 vs. final epoch VRMSE ({split})")
+    plt.title(f"First saved epoch vs. final epoch VRMSE ({split})")
 
     if use_log_y:
         plt.yscale("log")
@@ -341,7 +364,119 @@ def plot_epoch_zero_vs_final(
     plt.savefig(output_path, dpi = 300)
     plt.close()
 
-    return output_path, comparison_epochs, used_synthetic_epoch_zero
+    return output_path, comparison_epochs
+
+
+
+
+
+
+
+
+#================================================================================================================================================
+# PARITY PLOTTING
+#================================================================================================================================================
+
+def load_parity_points(
+    parity_path,
+    k_value = None,
+    channel = None,
+):
+    rows, fieldnames = read_csv_rows(parity_path)
+
+    required_columns = {"k", "channel", "target", "prediction"}
+    missing_columns = required_columns.difference(fieldnames)
+
+    if missing_columns:
+        raise ValueError(f"Parity file is missing required columns: {sorted(missing_columns)}")
+
+    targets = []
+    predictions = []
+
+    for row in rows:
+        row_k = int(float(row["k"]))
+        row_channel = int(float(row["channel"]))
+
+        if k_value is not None and row_k != int(k_value):
+            continue
+
+        if channel is not None and row_channel != int(channel):
+            continue
+
+        targets.append(parse_float(row["target"]))
+        predictions.append(parse_float(row["prediction"]))
+
+    if len(targets) == 0:
+        raise ValueError(
+            "No parity points matched the requested filters. "
+            f"k_value = {k_value}, channel = {channel}."
+        )
+
+    return targets, predictions
+
+
+
+
+
+def plot_parity(
+    parity_path,
+    output_path,
+    k_value = None,
+    channel = None,
+    max_points = PARITY_PLOT_MAX_POINTS,
+):
+    #------------------------------------------------------------------------------------------------------
+    # Plot prediction vs. target from the parity CSV produced by test.py.
+    #------------------------------------------------------------------------------------------------------
+
+    targets, predictions = load_parity_points(
+        parity_path = parity_path,
+        k_value = k_value,
+        channel = channel,
+    )
+
+    targets, predictions = downsample_xy(
+        x_values = targets,
+        y_values = predictions,
+        max_points = max_points,
+    )
+
+    min_axis_value = min(min(targets), min(predictions))
+    max_axis_value = max(max(targets), max(predictions))
+
+    output_path = Path(output_path).expanduser().resolve()
+    output_path.parent.mkdir(parents = True, exist_ok = True)
+
+    plt.figure(figsize = (6.5, 6.5))
+    plt.scatter(
+        targets,
+        predictions,
+        s = 8,
+        alpha = 0.35,
+    )
+    plt.plot(
+        [min_axis_value, max_axis_value],
+        [min_axis_value, max_axis_value],
+        linewidth = 1.5,
+    )
+
+    title_parts = ["Parity plot"]
+
+    if k_value is not None:
+        title_parts.append(f"k = {int(k_value)}")
+
+    if channel is not None:
+        title_parts.append(f"channel = {int(channel)}")
+
+    plt.xlabel("Target")
+    plt.ylabel("Prediction")
+    plt.title(" | ".join(title_parts))
+    plt.grid(True, alpha = 0.25)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi = 300)
+    plt.close()
+
+    return output_path, len(targets)
 
 
 
@@ -361,28 +496,34 @@ def parse_args():
         "--log-path",
         type = str,
         default = str(DEFAULT_LOG_PATH),
-        help = "Path to inner_run.py CSV log file.",
+        help = "Path to run.py CSV log file.",
+    )
+
+    parser.add_argument(
+        "--test-run-log",
+        action = "store_true",
+        help = "Use outputs/logs/inner_test_run_log.csv instead of inner_train_log.csv.",
     )
 
     parser.add_argument(
         "--test-log",
         action = "store_true",
-        help = "Use outputs/logs/inner_test_run_log.csv instead of inner_train_log.csv.",
+        help = "Use outputs/logs/inner_test_log.csv from test.py instead of inner_train_log.csv.",
     )
 
     parser.add_argument(
         "--split",
         type = str,
         default = "valid",
-        choices = ["train", "valid"],
+        choices = ["train", "valid", "test"],
         help = "Which split to plot from the CSV log.",
     )
 
     parser.add_argument(
-        "--divisions",
+        "--n-epochs",
         type = int,
-        default = 4,
-        help = "Number of epoch divisions. The plotted stride is total_epochs // divisions.",
+        default = N_EPOCHS,
+        help = "Number of evenly spaced saved epochs to plot. The final saved epoch is always included.",
     )
 
     parser.add_argument(
@@ -395,8 +536,55 @@ def parse_args():
     parser.add_argument(
         "--comparison-output-path",
         type = str,
-        default = str(PLOT_DIR / "vrmse_vs_k_epoch0_vs_final.png"),
-        help = "Where to save the epoch-0-versus-final connected-line plot.",
+        default = str(PLOT_DIR / "vrmse_vs_k_first_vs_final.png"),
+        help = "Where to save the first-saved-epoch-versus-final connected-line plot.",
+    )
+
+    parser.add_argument(
+        "--parity-path",
+        type = str,
+        default = str(TEST_PARITY_PATH),
+        help = "Path to the parity CSV produced by test.py.",
+    )
+
+    parser.add_argument(
+        "--parity-output-path",
+        type = str,
+        default = str(PLOT_DIR / "parity_plot.png"),
+        help = "Where to save the parity plot.",
+    )
+
+    parser.add_argument(
+        "--parity-k",
+        type = int,
+        default = None,
+        help = "Optional k value to isolate in the parity plot.",
+    )
+
+    parser.add_argument(
+        "--parity-channel",
+        type = int,
+        default = None,
+        help = "Optional physical channel index to isolate in the parity plot.",
+    )
+
+    parser.add_argument(
+        "--max-parity-points",
+        type = int,
+        default = PARITY_PLOT_MAX_POINTS,
+        help = "Maximum number of points shown on the parity plot.",
+    )
+
+    parser.add_argument(
+        "--only-parity",
+        action = "store_true",
+        help = "Only make the parity plot.",
+    )
+
+    parser.add_argument(
+        "--no-parity",
+        action = "store_true",
+        help = "Do not make the parity plot, even if the parity CSV exists.",
     )
 
     parser.add_argument(
@@ -414,31 +602,57 @@ def parse_args():
 def main():
     args = parse_args()
 
-    log_path = DEFAULT_TEST_LOG_PATH if args.test_log else args.log_path
+    if args.test_log:
+        log_path = DEFAULT_TEST_LOG_PATH
+    elif args.test_run_log:
+        log_path = DEFAULT_TEST_RUN_LOG_PATH
+    else:
+        log_path = args.log_path
 
-    output_path, selected_epochs, stride, used_synthetic_epoch_zero = plot_vrmse_curves(
-        log_path = log_path,
-        split = args.split,
-        divisions = args.divisions,
-        output_path = args.output_path,
-        use_log_y = not args.linear_y,
-    )
+    split = args.split
 
-    comparison_output_path, comparison_epochs, comparison_used_synthetic_epoch_zero = plot_epoch_zero_vs_final(
-        log_path = log_path,
-        split = args.split,
-        output_path = args.comparison_output_path,
-        use_log_y = not args.linear_y,
-    )
+    if args.test_log and args.split == "valid":
+        split = "test"
 
-    print(f"Saved scatter plot: {output_path}")
-    print(f"Plotted epochs: {selected_epochs}")
-    print(f"Epoch stride: {stride}")
-    print(f"Saved epoch-0-vs-final plot: {comparison_output_path}")
-    print(f"Comparison epochs: {comparison_epochs}")
+    if not args.only_parity:
+        output_path, selected_epochs = plot_vrmse_curves(
+            log_path = log_path,
+            split = split,
+            n_epochs = args.n_epochs,
+            output_path = args.output_path,
+            use_log_y = not args.linear_y,
+        )
 
-    if used_synthetic_epoch_zero or comparison_used_synthetic_epoch_zero:
-        print("Note: epoch 0 was not present in the log, so the earliest logged epoch was copied and relabeled as epoch 0.")
+        comparison_output_path, comparison_epochs = plot_epoch_first_vs_final(
+            log_path = log_path,
+            split = split,
+            output_path = args.comparison_output_path,
+            use_log_y = not args.linear_y,
+        )
+
+        print(f"Saved VRMSE plot: {output_path}")
+        print(f"Plotted epochs: {selected_epochs}")
+        print(f"Saved first-vs-final plot: {comparison_output_path}")
+        print(f"Comparison epochs: {comparison_epochs}")
+
+    parity_path = Path(args.parity_path).expanduser().resolve()
+
+    if not args.no_parity:
+        if parity_path.exists():
+            parity_output_path, num_points = plot_parity(
+                parity_path = parity_path,
+                output_path = args.parity_output_path,
+                k_value = args.parity_k,
+                channel = args.parity_channel,
+                max_points = args.max_parity_points,
+            )
+
+            print(f"Saved parity plot: {parity_output_path}")
+            print(f"Parity points plotted: {num_points}")
+        elif args.only_parity:
+            raise FileNotFoundError(f"Could not find parity CSV: {parity_path}")
+        else:
+            print(f"Parity CSV not found, so parity plot was skipped: {parity_path}")
 
 
 

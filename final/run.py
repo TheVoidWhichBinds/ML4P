@@ -1,4 +1,4 @@
-# inner_run.py
+# run.py
 #================================================================================================================================================
 # Train one shared InnerK model over several temporal-history values k.
 #================================================================================================================================================
@@ -18,7 +18,6 @@ from config import (
     CHECKPOINT_DIR,
     DATASET_PATH,
     EPOCH_PROGRESS_DIVISIONS,
-    EXPONENTIAL_FIT_WEIGHT,
     K_VALUES,
     GRAD_CLIP_MAX_NORM,
     LEARNING_RATE,
@@ -36,19 +35,24 @@ from config import (
     RANDOM_SEED,
     SLOPE_K,
     SLOPE_WEIGHT,
+    SLOPE_FIT_LR,
+    SLOPE_FIT_STEPS,
+    slope_loss,
     SPATIAL_KERNEL_SIZE,
     TEST_RUN_MAX_BATCHES,
     TEST_RUN_MAX_FILES,
     TEST_RUN_MAX_SAMPLES,
     TEST_RUN_MAX_TRAJECTORIES,
     TEST_RUN_NUM_EPOCHS,
+    TRAIN_CHECKPOINT_PATH,
+    TRAIN_LOG_PATH,
     TRAIN_SPLIT,
     VALID_SPLIT,
     VRMSE_EPS,
     WEIGHT_DECAY,
 )
 from data import MultiKPatchDataset, load_split
-from inner_model import ExponentialSlopeLoss, InnerK
+from model import ExponentialSlopeLoss, InnerK
 
 
 
@@ -102,6 +106,12 @@ def format_float(value) -> float:
 
 
 
+
+
+
+
+
+
 def assert_finite_tensor(name: str, value: torch.Tensor) -> None:
     if not torch.isfinite(value).all():
         raise FloatingPointError(f"Non-finite tensor detected: {name}")
@@ -128,7 +138,9 @@ def print_epoch_metrics(
     k_values,
 ):
     print(
-        f"epoch {epoch:04d}/{num_epochs:04d} | {split:>5s} | total VRMSE {metrics['total_loss']:.6e}",
+        f"epoch {epoch:04d}/{num_epochs:04d} | {split:>5s} | "
+        f"total loss {metrics['total_loss']:.6e} | "
+        f"pooled VRMSE {metrics['prediction_loss']:.6e}",
         flush = True,
     )
 
@@ -178,7 +190,7 @@ def print_epoch_progress(
         f"{split:>5s} progress | "
         f"batch {batch_number}/{total_batches} "
         f"({progress_percent:5.1f}%) | "
-        f"batch total VRMSE {diagnostics['total_loss']:.6e}",
+        f"batch total loss {diagnostics['total_loss']:.6e}",
         flush = True,
     )
 
@@ -279,7 +291,7 @@ def load_model_checkpoint(
     if not checkpoint_path.exists():
         raise FileNotFoundError(
             f"Pretrained InnerK checkpoint not found: {checkpoint_path}. "
-            f"Run pretrain_inner.py first, or pass --no-pretrained to start from scratch."
+            f"Run pretrain.py first, or pass --no-pretrained to start from scratch."
         )
 
     checkpoint = torch.load(
@@ -292,9 +304,57 @@ def load_model_checkpoint(
         checkpoint,
     )
 
-    model.load_state_dict(model_state_dict)
+    incompatible_keys = model.load_state_dict(
+        model_state_dict,
+        strict = False,
+    )
+
+    if incompatible_keys.missing_keys:
+        print(
+            "Checkpoint did not contain these newly initialized model parameters: "
+            f"{incompatible_keys.missing_keys}"
+        )
+
+    if incompatible_keys.unexpected_keys:
+        print(
+            "Checkpoint contained unused parameters: "
+            f"{incompatible_keys.unexpected_keys}"
+        )
 
     print(f"Loaded pretrained InnerK checkpoint: {checkpoint_path}")
+
+
+
+
+
+def save_training_checkpoint(
+    model: InnerK,
+    optimizer: torch.optim.Optimizer,
+    checkpoint_path: Path,
+    k_values,
+    active_slope_k: int,
+    use_slope_loss: bool,
+    epoch: int,
+    log_path: Path,
+) -> None:
+    #------------------------------------------------------------------------------------------------------
+    # Save the current learned model parameters, including the TaylorActivation theta values.
+    # This checkpoint is updated after every completed epoch so test.py can load the latest completed state.
+    #------------------------------------------------------------------------------------------------------
+
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "k_values": list(k_values),
+            "slope_k": active_slope_k,
+            "slope_loss": use_slope_loss,
+            "epoch": int(epoch),
+            "final_epoch": int(epoch),
+            "log_path": str(log_path),
+        },
+        checkpoint_path,
+    )
 
 
 
@@ -313,6 +373,7 @@ def compute_multik_loss(
     batch,
     k_values,
     device: torch.device,
+    use_slope_loss: bool,
 ):
     batch = move_batch_to_device(
         batch = batch,
@@ -344,31 +405,49 @@ def compute_multik_loss(
     vrmse_values = torch.stack(vrmse_values)
 
     #------------------------------------------------------------------------------------------------------
-    # Neutralized slope regularization:
+    # Loss selection:
     #
-    # The old version called slope_loss_fn(k_values, loss_values), which made the backpropagated loss include
-    # prediction loss, exponential-fit loss, and slope loss. For stability, the optimizer now sees only the
-    # pooled prediction VRMSE across all k values.
+    #     slope_loss = False:
+    #         optimize pooled VRMSE only
+    #
+    #     slope_loss = True:
+    #         optimize pooled VRMSE + exponential slope loss
+    #
+    # The exponential curve parameters are refit from the current VRMSE(k) values. They are not trainable
+    # model parameters and are not included in the optimizer.
     #------------------------------------------------------------------------------------------------------
 
-    prediction_loss = torch.mean(vrmse_values)
-    total_loss = prediction_loss
+    if use_slope_loss:
+        k_tensor = torch.tensor(
+            k_values,
+            device = device,
+            dtype = vrmse_values.dtype,
+        )
+
+        total_loss, diagnostics = slope_loss_fn(
+            k_values = k_tensor,
+            vrmse_values = vrmse_values,
+        )
+    else:
+        prediction_loss = torch.mean(vrmse_values)
+        total_loss = prediction_loss
+
+        diagnostics = {
+            "total_loss": total_loss.detach(),
+            "prediction_loss": prediction_loss.detach(),
+            "slope_loss": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+            "slope": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+            "p": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+            "A": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+            "k_shift": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+            "w": torch.zeros((), device = device, dtype = vrmse_values.dtype),
+        }
+
     assert_finite_tensor("total loss", total_loss)
 
-    diagnostics = {
-        "total_loss": total_loss.detach(),
-        "prediction_loss": prediction_loss.detach(),
-        "fit_loss": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "slope_loss": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "slope": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "p": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "A": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "k_shift": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "w": torch.zeros((), device = device, dtype = vrmse_values.dtype),
-        "vrmse_by_k": {
-            k: format_float(value)
-            for k, value in vrmse_dict.items()
-        },
+    diagnostics["vrmse_by_k"] = {
+        k: format_float(value)
+        for k, value in vrmse_dict.items()
     }
 
     return total_loss, diagnostics
@@ -396,6 +475,7 @@ def run_epoch(
     num_epochs: Optional[int] = None,
     split: Optional[str] = None,
     progress_divisions: int = 0,
+    use_slope_loss: bool = False,
 ):
     is_train = optimizer is not None
 
@@ -405,7 +485,6 @@ def run_epoch(
     totals = {
         "total_loss": 0.0,
         "prediction_loss": 0.0,
-        "fit_loss": 0.0,
         "slope_loss": 0.0,
         "slope": 0.0,
         "p": 0.0,
@@ -447,13 +526,20 @@ def run_epoch(
                 batch = batch,
                 k_values = k_values,
                 device = device,
+                use_slope_loss = use_slope_loss,
             )
 
             if is_train:
                 total_loss.backward()
 
+                optimizer_parameters = [
+                    parameter
+                    for group in optimizer.param_groups
+                    for parameter in group["params"]
+                ]
+
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(),
+                    optimizer_parameters,
                     max_norm = GRAD_CLIP_MAX_NORM,
                 )
 
@@ -467,6 +553,7 @@ def run_epoch(
                     model = model,
                     stage = "optimizer step",
                 )
+
 
             for key in totals:
                 totals[key] += format_float(diagnostics[key])
@@ -522,8 +609,10 @@ def train_inner(
     k_values = None,
     log_path = None,
     checkpoint_path = None,
+    pretrained_checkpoint_path = None,
     load_pretrained: Optional[bool] = None,
     num_epochs_override: Optional[int] = None,
+    use_slope_loss: Optional[bool] = None,
 ):
     torch.manual_seed(RANDOM_SEED)
 
@@ -531,9 +620,29 @@ def train_inner(
 
     dataset_path = Path(dataset_path).expanduser().resolve() if dataset_path is not None else DATASET_PATH
     k_values = list(K_VALUES) if k_values is None else [int(k) for k in k_values]
+    k_values = sorted(set(k_values))
 
     if len(k_values) == 0:
         raise ValueError("At least one k value is required.")
+
+    if any(k <= 0 for k in k_values):
+        raise ValueError(f"All k values must be positive integers, but got {k_values}.")
+
+    if use_slope_loss is None:
+        use_slope_loss = bool(slope_loss)
+
+    if use_slope_loss and len(k_values) < 4:
+        raise ValueError(
+            "slope_loss = True requires at least four k values so p, A, k_shift, and w can be fit. "
+            f"Current k_values = {k_values}."
+        )
+
+    if use_slope_loss and SLOPE_K not in k_values:
+        raise ValueError(
+            f"slope_loss = True requires SLOPE_K = {SLOPE_K} to appear in K_VALUES = {k_values}."
+        )
+
+    active_slope_k = SLOPE_K if use_slope_loss else k_values[0]
 
     num_epochs = TEST_RUN_NUM_EPOCHS if test_run else (num_epochs_override or NUM_EPOCHS)
     max_files = TEST_RUN_MAX_FILES if test_run else MAX_FILES
@@ -549,7 +658,18 @@ def train_inner(
     print(f"K_VALUES: {k_values}")
     print(f"Learning rate: {LEARNING_RATE:.1e}")
     print(f"Gradient clipping max norm: {GRAD_CLIP_MAX_NORM:.1e}")
-    print("Slope/fit loss: disabled; optimizing pooled VRMSE only")
+
+    if use_slope_loss:
+        print(
+            "Slope loss: enabled; optimizing pooled VRMSE plus exponential slope loss"
+        )
+        print(f"SLOPE_K: {active_slope_k}")
+        print(f"SLOPE_WEIGHT: {SLOPE_WEIGHT:.1e}")
+        print(f"SLOPE_FIT_STEPS: {SLOPE_FIT_STEPS}")
+        print(f"SLOPE_FIT_LR: {SLOPE_FIT_LR:.1e}")
+    else:
+        print("Slope loss: disabled; optimizing pooled VRMSE only")
+
     print(f"Test run: {test_run}")
 
     train_loader = make_loader(
@@ -575,27 +695,27 @@ def train_inner(
     )
 
     model = InnerK(
-        k = None,
+        k_values = k_values,
     ).to(device)
 
     if load_pretrained is None:
         load_pretrained = LOAD_PRETRAINED_INNERK
 
     if load_pretrained:
-        pretrained_checkpoint_path = PRETRAIN_TEST_CHECKPOINT_PATH if test_run else PRETRAIN_CHECKPOINT_PATH
+        if pretrained_checkpoint_path is None:
+            pretrained_checkpoint_path = PRETRAIN_TEST_CHECKPOINT_PATH if test_run else PRETRAIN_CHECKPOINT_PATH
 
         load_model_checkpoint(
             model = model,
-            checkpoint_path = pretrained_checkpoint_path,
+            checkpoint_path = Path(pretrained_checkpoint_path),
         )
-
-    active_slope_k = SLOPE_K if SLOPE_K in k_values else k_values[-1]
 
     slope_loss_fn = ExponentialSlopeLoss(
         k_ref = active_slope_k,
-        fit_weight = EXPONENTIAL_FIT_WEIGHT,
         slope_weight = SLOPE_WEIGHT,
         prediction_weight = PREDICTION_WEIGHT,
+        fit_steps = SLOPE_FIT_STEPS,
+        fit_lr = SLOPE_FIT_LR,
     ).to(device)
 
     optimizer = torch.optim.Adam(
@@ -604,8 +724,8 @@ def train_inner(
         weight_decay = WEIGHT_DECAY,
     )
 
-    log_path = Path(log_path) if log_path is not None else LOG_DIR / ("inner_test_run_log.csv" if test_run else "inner_train_log.csv")
-    checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else CHECKPOINT_DIR / ("inner_test_run.pt" if test_run else "inner_shared.pt")
+    log_path = Path(log_path) if log_path is not None else (LOG_DIR / "inner_test_run_log.csv" if test_run else TRAIN_LOG_PATH)
+    checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else (CHECKPOINT_DIR / "inner_test_run.pt" if test_run else TRAIN_CHECKPOINT_PATH)
 
     log_path.parent.mkdir(parents = True, exist_ok = True)
     checkpoint_path.parent.mkdir(parents = True, exist_ok = True)
@@ -615,6 +735,12 @@ def train_inner(
         "split",
         "total_loss",
         "prediction_loss",
+        "slope_loss",
+        "slope",
+        "p",
+        "A",
+        "k_shift",
+        "w",
     ] + [f"vrmse_k_{k}" for k in k_values]
 
     with open(log_path, "w", newline = "") as log_file:
@@ -643,6 +769,7 @@ def train_inner(
                 num_epochs = num_epochs,
                 split = "train",
                 progress_divisions = EPOCH_PROGRESS_DIVISIONS,
+                use_slope_loss = use_slope_loss,
             )
 
             print_epoch_metrics(
@@ -665,6 +792,7 @@ def train_inner(
                 num_epochs = num_epochs,
                 split = "valid",
                 progress_divisions = EPOCH_PROGRESS_DIVISIONS,
+                use_slope_loss = use_slope_loss,
             )
 
             print_epoch_metrics(
@@ -680,6 +808,12 @@ def train_inner(
                 "split": "train",
                 "total_loss": train_metrics["total_loss"],
                 "prediction_loss": train_metrics["prediction_loss"],
+                "slope_loss": train_metrics["slope_loss"],
+                "slope": train_metrics["slope"],
+                "p": train_metrics["p"],
+                "A": train_metrics["A"],
+                "k_shift": train_metrics["k_shift"],
+                "w": train_metrics["w"],
             }
 
             valid_row = {
@@ -687,6 +821,12 @@ def train_inner(
                 "split": "valid",
                 "total_loss": valid_metrics["total_loss"],
                 "prediction_loss": valid_metrics["prediction_loss"],
+                "slope_loss": valid_metrics["slope_loss"],
+                "slope": valid_metrics["slope"],
+                "p": valid_metrics["p"],
+                "A": valid_metrics["A"],
+                "k_shift": valid_metrics["k_shift"],
+                "w": valid_metrics["w"],
             }
 
             for k in k_values:
@@ -697,16 +837,16 @@ def train_inner(
             writer.writerow(valid_row)
             log_file.flush()
 
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "slope_loss_state_dict": slope_loss_fn.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "k_values": k_values,
-            "slope_k": active_slope_k,
-        },
-        checkpoint_path,
-    )
+            save_training_checkpoint(
+                model = model,
+                optimizer = optimizer,
+                checkpoint_path = checkpoint_path,
+                k_values = k_values,
+                active_slope_k = active_slope_k,
+                use_slope_loss = use_slope_loss,
+                epoch = epoch,
+                log_path = log_path,
+            )
 
     print(f"Saved checkpoint: {checkpoint_path}")
     print(f"Saved log: {log_path}")
@@ -734,7 +874,28 @@ def parse_args():
     parser.add_argument(
         "--no-pretrained",
         action = "store_true",
-        help = "Start from scratch instead of loading the k = 100 pretraining checkpoint.",
+        help = "Start from scratch instead of loading a pretraining checkpoint.",
+    )
+
+    parser.add_argument(
+        "--log-path",
+        type = str,
+        default = None,
+        help = "Optional CSV log path. Defaults to outputs/logs/inner_train_log.csv.",
+    )
+
+    parser.add_argument(
+        "--checkpoint-path",
+        type = str,
+        default = None,
+        help = "Optional output checkpoint path. Defaults to outputs/checkpoints/inner_shared.pt.",
+    )
+
+    parser.add_argument(
+        "--pretrained-checkpoint",
+        type = str,
+        default = None,
+        help = "Optional checkpoint to load for the warm start.",
     )
 
     return parser.parse_args()
@@ -749,5 +910,9 @@ if __name__ == "__main__":
     train_inner(
         test_run = args.test_run,
         dataset_path = args.dataset_path,
+        k_values = None,
+        log_path = args.log_path,
+        checkpoint_path = args.checkpoint_path,
+        pretrained_checkpoint_path = args.pretrained_checkpoint,
         load_pretrained = not args.no_pretrained,
     )
